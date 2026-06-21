@@ -1,0 +1,6 @@
+{
+  "name": "Calculadora Vial Multiescenario",
+  "description": "Análisis polinómico multiescenario para licitaciones de obra vial, estructurado con amortización de equipos, imprevistos y descuentos de acopio financiero.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
