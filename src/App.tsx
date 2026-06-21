@@ -6,11 +6,13 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import ExcelJS from 'exceljs';
+import { jsPDF } from 'jspdf';
 import {
   Calculator,
   ShieldAlert,
   Award,
   FileSpreadsheet,
+  FileText,
   TrendingUp,
   RefreshCw,
   BarChart4,
@@ -25,7 +27,9 @@ import {
   Upload,
   FileUp,
   Sparkles,
-  Brain
+  Brain,
+  Calendar,
+  Layers
 } from 'lucide-react';
 import {
   BarChart as ReBarChart,
@@ -38,7 +42,11 @@ import {
   ResponsiveContainer,
   PieChart as RePieChart,
   Pie,
-  Cell
+  Cell,
+  LineChart,
+  Line,
+  ScatterChart,
+  Scatter
 } from 'recharts';
 import { InputsState, ScenarioResult, RowMeta } from './types';
 import {
@@ -55,8 +63,24 @@ export default function App() {
   const [selectedScenario, setSelectedScenario] = useState<'min' | 'opt' | 'max'>('opt');
   const [searchQuery, setSearchQuery] = useState('');
   const [inspectedRow, setInspectedRow] = useState<RowMeta | null>(FILAS_ESTRUCTURA[19]); // Defecto en el total
-  const [activeTab, setActiveTab] = useState<'table' | 'charts' | 'formulas'>('table');
+  const [activeTab, setActiveTab] = useState<'table' | 'charts' | 'formulas' | 'gantt'>('table');
   const [exportSuccess, setExportSuccess] = useState(false);
+  const [licitacionInfo, setLicitacionInfo] = useState<string>(
+    "Licitación Vial Pública 02/2026 — Provincia de Santa Fe, Argentina. Obra: Repavimentación e Infraestructura de Corredores Primarios. Pliego contractual: acopio preventivo de Hormigón H-30."
+  );
+  
+  // States for interactive Gantt Timeline Chart
+  const [plazoObra, setPlazoObra] = useState<number>(12);
+  const [gp1, setGp1] = useState<number>(100);
+  const [gp2, setGp2] = useState<number>(75);
+  const [gp3, setGp3] = useState<number>(40);
+  const [gp4, setGp4] = useState<number>(20);
+  const [gp5, setGp5] = useState<number>(0);
+  const [gp6, setGp6] = useState<number>(0);
+
+  // States for sensitivity analysis visualization
+  const [inflMaxRange, setInflMaxRange] = useState<number>(25);
+  const [sensitivityMetric, setSensitivityMetric] = useState<'pv' | 'k'>('k');
 
   // States for AI Document Analysis
   const [analyzing, setAnalyzing] = useState(false);
@@ -188,6 +212,7 @@ export default function App() {
         ben_opt: DEFAULT_INPUTS.ben_opt,
         inf_max: DEFAULT_INPUTS.inf_max,
         ben_max: DEFAULT_INPUTS.ben_max,
+        factor_contingencia: DEFAULT_INPUTS.factor_contingencia,
       });
 
       setAnalysisResult({
@@ -195,6 +220,10 @@ export default function App() {
         estimatedLocation: data.estimatedLocation,
         explanation: data.explanation,
       });
+
+      setLicitacionInfo(
+        `${data.estimatedTitle} — ${data.estimatedLocation}\n\nResumen del pliego analizado:\n• Costo Directo base estimado: $${(data.base_cd || 0).toLocaleString('es-AR')}\n• Acopio de H-30 de pliego: ${data.base_cant_ant || 0} m³\n• Análisis de justificación: ${data.explanation}`
+      );
     } catch (err: any) {
       console.error(err);
       setAnalysisError(err.message || "Error al conectar con el servidor de análisis IA.");
@@ -215,6 +244,28 @@ export default function App() {
   const activeResult = useMemo(() => {
     return results[selectedScenario];
   }, [results, selectedScenario]);
+
+  const sensitivityData = useMemo(() => {
+    const list = [];
+    const steps = 10;
+    for (let i = 0; i <= steps; i++) {
+      const inflVal = (inflMaxRange / steps) * i;
+      const rMin = calcEscenario(inputs, inflVal, inputs.ben_min);
+      const rOpt = calcEscenario(inputs, inflVal, inputs.ben_opt);
+      const rMax = calcEscenario(inputs, inflVal, inputs.ben_max);
+      list.push({
+        inflation: inflVal,
+        formattedInflation: `${inflVal.toFixed(1)}%`,
+        min_k: Number(rMin.k.toFixed(4)),
+        opt_k: Number(rOpt.k.toFixed(4)),
+        max_k: Number(rMax.k.toFixed(4)),
+        min_pv: Math.round(rMin.pv_total),
+        opt_pv: Math.round(rOpt.pv_total),
+        max_pv: Math.round(rMax.pv_total),
+      });
+    }
+    return list;
+  }, [inputs, inflMaxRange]);
 
   // Handle Input Changes safely
   const handleInputChange = (key: keyof InputsState, value: string) => {
@@ -416,6 +467,22 @@ export default function App() {
         worksheet.getCell(20, c).alignment = { horizontal: 'right' };
       }
 
+      // Global Contingency Factor Row in Row 21
+      worksheet.getCell('B21').value = 'Factor de Contingencia Global (Multiplicador)';
+      worksheet.getCell('B21').font = { name: 'Arial', size: 9, bold: true, color: { argb: '8C6A5A' } };
+      worksheet.getCell('C21').value = inputs.factor_contingencia;
+      worksheet.getCell('C21').numFmt = '0.00';
+      worksheet.getCell('C21').font = { name: 'Arial', size: 9, bold: true, color: { argb: '8C6A5A' } };
+      worksheet.getCell('C21').alignment = { horizontal: 'right' };
+      worksheet.getCell('D21').value = { formula: 'C21' };
+      worksheet.getCell('D21').numFmt = '0.00';
+      worksheet.getCell('D21').font = { name: 'Arial', size: 9, bold: true, color: { argb: '8C6A5A' } };
+      worksheet.getCell('D21').alignment = { horizontal: 'right' };
+      worksheet.getCell('E21').value = { formula: 'C21' };
+      worksheet.getCell('E21').numFmt = '0.00';
+      worksheet.getCell('E21').font = { name: 'Arial', size: 9, bold: true, color: { argb: '8C6A5A' } };
+      worksheet.getCell('E21').alignment = { horizontal: 'right' };
+
       // Budget Table Headers
       worksheet.getCell('B23').value = 'CONCEPTO VIAL DE COSTO / IMPUESTO';
       worksheet.getCell('C23').value = 'MÍNIMO (AGRESIVO)';
@@ -436,34 +503,34 @@ export default function App() {
       worksheet.getCell('E24').value = { formula: 'C$6' };
 
       worksheet.getCell('B25').value = '2. COSTO INDIRECTO';
-      worksheet.getCell('C25').value = { formula: 'C24*C$10' };
-      worksheet.getCell('D25').value = { formula: 'D24*C$10' };
-      worksheet.getCell('E25').value = { formula: 'E24*C$10' };
+      worksheet.getCell('C25').value = { formula: 'C24*C$10*C$21' };
+      worksheet.getCell('D25').value = { formula: 'D24*C$10*D$21' };
+      worksheet.getCell('E25').value = { formula: 'E24*C$10*E$21' };
 
       worksheet.getCell('B26').value = '   3.1 SEGUROS (RC y ART)';
-      worksheet.getCell('C26').value = { formula: 'C24*C$11' };
-      worksheet.getCell('D26').value = { formula: 'D24*C$11' };
-      worksheet.getCell('E26').value = { formula: 'E24*C$11' };
+      worksheet.getCell('C26').value = { formula: 'C24*C$11*C$21' };
+      worksheet.getCell('D26').value = { formula: 'D24*C$11*D$21' };
+      worksheet.getCell('E26').value = { formula: 'E24*C$11*E$21' };
 
       worksheet.getCell('B27').value = '   3.2 GARANTÍAS DE PLIEGO';
-      worksheet.getCell('C27').value = { formula: 'C24*C$12' };
-      worksheet.getCell('D27').value = { formula: 'D24*C$12' };
-      worksheet.getCell('E27').value = { formula: 'E24*C$12' };
+      worksheet.getCell('C27').value = { formula: 'C24*C$12*C$21' };
+      worksheet.getCell('D27').value = { formula: 'D24*C$12*D$21' };
+      worksheet.getCell('E27').value = { formula: 'E24*C$12*E$21' };
 
       worksheet.getCell('B28').value = '   3.3 SELLADO DE CONTRATO';
-      worksheet.getCell('C28').value = { formula: 'C24*C$13' };
-      worksheet.getCell('D28').value = { formula: 'D24*C$13' };
-      worksheet.getCell('E28').value = { formula: 'E24*C$13' };
+      worksheet.getCell('C28').value = { formula: 'C24*C$13*C$21' };
+      worksheet.getCell('D28').value = { formula: 'D24*C$13*D$21' };
+      worksheet.getCell('E28').value = { formula: 'E24*C$13*E$21' };
 
       worksheet.getCell('B29').value = '   3.4 APORTES PROFESIONALES';
-      worksheet.getCell('C29').value = { formula: 'C24*C$14' };
-      worksheet.getCell('D29').value = { formula: 'D24*C$14' };
-      worksheet.getCell('E29').value = { formula: 'E24*C$14' };
+      worksheet.getCell('C29').value = { formula: 'C24*C$14*C$21' };
+      worksheet.getCell('D29').value = { formula: 'D24*C$14*D$21' };
+      worksheet.getCell('E29').value = { formula: 'E24*C$14*E$21' };
 
       worksheet.getCell('B30').value = '4. IMPREVISTOS DE CAMPO';
-      worksheet.getCell('C30').value = { formula: '(C24+C25)*C$15' };
-      worksheet.getCell('D30').value = { formula: '(D24+D25)*C$15' };
-      worksheet.getCell('E30').value = { formula: '(E24+E25)*C$15' };
+      worksheet.getCell('C30').value = { formula: '(C24+C25)*C$15*C$21' };
+      worksheet.getCell('D30').value = { formula: '(D24+D25)*C$15*D$21' };
+      worksheet.getCell('E30').value = { formula: '(E24+E25)*C$15*E$21' };
 
       worksheet.getCell('B31').value = '5. SUBTOTAL COSTOS OPERATIVOS';
       worksheet.getCell('C31').value = { formula: 'SUM(C24:C30)' };
@@ -476,9 +543,9 @@ export default function App() {
       worksheet.getCell('E32').value = { formula: 'E31*E$19' };
 
       worksheet.getCell('B33').value = '7. GASTOS GENERALES EMPRESA';
-      worksheet.getCell('C33').value = { formula: '(C31+C32)*C$16' };
-      worksheet.getCell('D33').value = { formula: '(D31+D32)*C$16' };
-      worksheet.getCell('E33').value = { formula: '(E31+E32)*C$16' };
+      worksheet.getCell('C33').value = { formula: '(C31+C32)*C$16*C$21' };
+      worksheet.getCell('D33').value = { formula: '(D31+D32)*C$16*D$21' };
+      worksheet.getCell('E33').value = { formula: '(E31+E32)*C$16*E$21' };
 
       worksheet.getCell('B34').value = '8. COSTO TOTAL DE LA OBRA';
       worksheet.getCell('C34').value = { formula: 'C31+C32+C33' };
@@ -626,6 +693,434 @@ export default function App() {
     }
   };
 
+  // Export as visually polished, high-fidelity PDF report
+  const handleExportPDF = async () => {
+    try {
+      const doc = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = 210;
+      const pageHeight = 297;
+      const margin = 15;
+      const contentWidth = pageWidth - (margin * 2);
+
+      // Colors
+      const rgbPrimary = [90, 113, 110]; // #5A716E
+      const rgbSecondary = [113, 113, 90]; // #71715A
+      const rgbDark = [45, 42, 38]; // #2D2A26
+      const rgbBgNeutral = [245, 242, 237]; // #F5F2ED
+      const rgbAccent = [140, 106, 90]; // #8C6A5A
+
+      // Helper: Draw Header Band
+      const drawHeader = (pageNum: number) => {
+        doc.setFillColor(rgbDark[0], rgbDark[1], rgbDark[2]);
+        doc.rect(0, 0, pageWidth, 28, 'F');
+        
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('Helvetica', 'bold');
+        doc.setFontSize(14);
+        doc.text('INFORME TÉCNICO EJECUTIVO - SIMULACIÓN POLINÓMICA K', margin, 12);
+        
+        doc.setFont('Helvetica', 'normal');
+        doc.setFontSize(9);
+        doc.setTextColor(200, 200, 200);
+        doc.text(`Licitación Pública de Infraestructura Vial - Provincia de Santa Fe | Página ${pageNum} de 2`, margin, 19);
+        
+        doc.setFillColor(rgbPrimary[0], rgbPrimary[1], rgbPrimary[2]);
+        doc.rect(0, 28, pageWidth, 1.5, 'F');
+      };
+
+      // PAGE 1
+      drawHeader(1);
+      let yPos = 40;
+
+      // 1. FICHA TÉCNICA Y PARÁMETROS DE LICITACIÓN
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(rgbPrimary[0], rgbPrimary[1], rgbPrimary[2]);
+      doc.text('I. FICHA DE DATOS LICITATORIOS Y ESPECIFICACIONES DE OBRA', margin, yPos);
+      yPos += 4;
+
+      // Draw box for ficha tecnica
+      doc.setFillColor(rgbBgNeutral[0], rgbBgNeutral[1], rgbBgNeutral[2]);
+      doc.rect(margin, yPos, contentWidth, 48, 'F');
+      doc.setDrawColor(217, 210, 197);
+      doc.setLineWidth(0.2);
+      doc.rect(margin, yPos, contentWidth, 48, 'S');
+
+      // Add project meta from custom text field
+      doc.setTextColor(rgbDark[0], rgbDark[1], rgbDark[2]);
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.text('Detalles del Pliego Analizado:', margin + 5, yPos + 6);
+      
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(8);
+      const docLines = doc.splitTextToSize(licitacionInfo || '', contentWidth - 14);
+      const linesToShow = docLines.slice(0, 4); // Show up to 4 lines
+      linesToShow.forEach((lineText: string, i: number) => {
+        doc.text(lineText, margin + 5, yPos + 11.5 + (i * 4.2));
+      });
+
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.text(`Simulación: ${new Date().toLocaleDateString('es-AR')}`, margin + contentWidth - 42, yPos + 6);
+
+      // Line separator in the box
+      doc.setDrawColor(217, 210, 197);
+      doc.line(margin + 5, yPos + 29, margin + contentWidth - 5, yPos + 29);
+
+      // Add core parameters values
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.text('Costo Directo Base:', margin + 5, yPos + 34);
+      doc.setFont('Helvetica', 'normal');
+      doc.text(fmtLocal(inputs.base_cd), margin + 38, yPos + 34);
+
+      doc.setFont('Helvetica', 'bold');
+      doc.text('Régimen Acopio:', margin + 5, yPos + 40);
+      doc.setFont('Helvetica', 'normal');
+      doc.text(`${inputs.base_cant_ant} m³ de Hormigón H-30`, margin + 34, yPos + 40);
+
+      doc.setFont('Helvetica', 'bold');
+      doc.text('Monto de Acopio:', margin + 115, yPos + 34);
+      doc.setFont('Helvetica', 'normal');
+      doc.text(fmtLocal(inputs.base_cant_ant * inputs.base_p_h30), margin + 143, yPos + 34);
+
+      doc.setFont('Helvetica', 'bold');
+      doc.text('Coef. Indirecto:', margin + 115, yPos + 40);
+      doc.setFont('Helvetica', 'normal');
+      doc.text(`CI: ${inputs.t_ci}% | GG: ${inputs.t_gg}% | IMP: ${inputs.t_imp}%`, margin + 141, yPos + 40);
+
+      doc.setFont('Helvetica', 'bold');
+      doc.text('Costo m³ H-30:', margin + 5, yPos + 45);
+      doc.setFont('Helvetica', 'normal');
+      doc.text(`${fmtLocal(inputs.base_p_h30)} por m³`, margin + 31, yPos + 45);
+
+      doc.setFont('Helvetica', 'bold');
+      doc.text('Sellado Contrato:', margin + 115, yPos + 45);
+      doc.setFont('Helvetica', 'normal');
+      doc.text(`${inputs.t_sel}% de Ley Provincial`, margin + 144, yPos + 45);
+
+      yPos += 54;
+
+      // 2. COMPARATIVE BUDGET TABLE
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(rgbPrimary[0], rgbPrimary[1], rgbPrimary[2]);
+      doc.text('II. ESTRUCTURA COMPARATIVA DE COSTOS Y OFERTA FINAL', margin, yPos);
+      yPos += 4;
+
+      // Draw table headers
+      const colWidths = [65, 37, 39, 39]; // Total must be contentWidth = 180
+      const colPositions = [
+        margin,
+        margin + colWidths[0],
+        margin + colWidths[0] + colWidths[1],
+        margin + colWidths[0] + colWidths[1] + colWidths[2],
+      ];
+
+      doc.setFillColor(rgbDark[0], rgbDark[1], rgbDark[2]);
+      doc.rect(margin, yPos, contentWidth, 7, 'F');
+
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.text('CONCEPTO ESTRUCTURAL', colPositions[0] + 3, yPos + 5);
+      doc.text('MÍNIMO (AGRESIVO)', colPositions[1] + colWidths[1] - 3, yPos + 5, { align: 'right' });
+      doc.text('ÓPTIMO (ESTÁNDAR)', colPositions[2] + colWidths[2] - 3, yPos + 5, { align: 'right' });
+      doc.text('MÁXIMO (PROTEGIDO)', colPositions[3] + colWidths[3] - 3, yPos + 5, { align: 'right' });
+      
+      yPos += 7;
+
+      // Table rows definitions
+      const rowsData = [
+        { label: '1. COSTO DIRECTO BASE de Obra', key: 'cd', style: 'normal' },
+        { label: '2. Costo Indirecto de Campo (t_ci)', key: 'ci', style: 'indent' },
+        { label: '3. Seguros (RC + ART) y Pliegos', key: 'seg_total', style: 'indent', calc: (r: any) => r.seg + r.gar + r.sel + r.apo },
+        { label: '4. Margen para Imprevistos (t_imp)', key: 'imp', style: 'indent' },
+        { label: '5. SUBTOTAL COSTOS OPERATIVOS', key: 'sub5', style: 'subtotal' }, // key is 'sub5'
+        { label: '6. Tasa de Inflación Contemplada', key: 'infl', style: 'normal' },
+        { label: '7. Gastos Generales Sede (t_gg)', key: 'gg', style: 'normal' },
+        { label: '8. COSTO TOTAL DE LA OBRA', key: 'c_total', style: 'subtotal' }, // key is 'c_total'
+        { label: '10. Costo Financiero (Neto descubierto)', key: 'fin', style: 'normal' }, // key is 'fin'
+        { label: '11. Beneficio Empresario Real Proyectado', key: 'ben', style: 'normal' },
+        { label: '12. Base antes de Impuestos', key: 'sub13', style: 'subtotal' }, // key is 'sub13'
+        { label: '13. Ingresos Brutos (3.5% Santa Fe)', key: 'iibb', style: 'indent' }, // key is 'iibb'
+        { label: '14. Impuesto al Cheque (Crédito/Débito)', key: 'cheque', style: 'indent' }, // key is 'cheque'
+        { label: '15. Impuesto al Valor Agregado (IVA 21.0%)', key: 'iva', style: 'indent' }, // key is 'iva'
+        { label: '16. PRECIO TOTAL DE OFERTA DE OBRA', key: 'pv_total', style: 'total' }, // key is 'pv_total'
+      ];
+
+      rowsData.forEach((row, index) => {
+        const isDarkRow = index % 2 === 1;
+        const isSubtotal = row.style === 'subtotal';
+        const isTotal = row.style === 'total';
+        const isIndent = row.style === 'indent';
+
+        // Row background
+        if (isTotal) {
+          doc.setFillColor(rgbPrimary[0], rgbPrimary[1], rgbPrimary[2]);
+          doc.rect(margin, yPos, contentWidth, 6.5, 'F');
+          doc.setTextColor(255, 255, 255);
+          doc.setFont('Helvetica', 'bold');
+        } else if (isSubtotal) {
+          doc.setFillColor(235, 231, 223); // bg subtotals
+          doc.rect(margin, yPos, contentWidth, 6, 'F');
+          doc.setTextColor(rgbDark[0], rgbDark[1], rgbDark[2]);
+          doc.setFont('Helvetica', 'bold');
+        } else {
+          if (isDarkRow) {
+            doc.setFillColor(250, 249, 247);
+            doc.rect(margin, yPos, contentWidth, 5.5, 'F');
+          }
+          doc.setTextColor(rgbDark[0], rgbDark[1], rgbDark[2]);
+          if (isIndent) {
+            doc.setFont('Helvetica', 'oblique');
+          } else {
+            doc.setFont('Helvetica', 'normal');
+          }
+        }
+
+        const fontSize = (isTotal || isSubtotal) ? 8.5 : 8;
+        doc.setFontSize(fontSize);
+
+        // Draw cells
+        const labelTxt = isIndent ? `   • ${row.label}` : row.label;
+        doc.text(labelTxt, colPositions[0] + 3, yPos + (isTotal ? 4.5 : isSubtotal ? 4.2 : 3.8));
+
+        const getVal = (scenario: 'min' | 'opt' | 'max') => {
+          if (row.calc) {
+            return row.calc(results[scenario]);
+          }
+          return (results[scenario] as any)[row.key];
+        };
+
+        const valMin = getVal('min');
+        const valOpt = getVal('opt');
+        const valMax = getVal('max');
+
+        doc.text(fmtLocal(valMin), colPositions[1] + colWidths[1] - 3, yPos + (isTotal ? 4.5 : isSubtotal ? 4.2 : 3.8), { align: 'right' });
+        doc.text(fmtLocal(valOpt), colPositions[2] + colWidths[2] - 3, yPos + (isTotal ? 4.5 : isSubtotal ? 4.2 : 3.8), { align: 'right' });
+        doc.text(fmtLocal(valMax), colPositions[3] + colWidths[3] - 3, yPos + (isTotal ? 4.5 : isSubtotal ? 4.2 : 3.8), { align: 'right' });
+
+        yPos += isTotal ? 6.5 : isSubtotal ? 6 : 5.5;
+      });
+
+      yPos += 3;
+
+      // K MULTIPLIER FACTOR FINAL ROW
+      doc.setFillColor(rgbSecondary[0], rgbSecondary[1], rgbSecondary[2]);
+      doc.rect(margin, yPos, contentWidth, 8, 'F');
+      
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.text('FACTOR MULTIPLICADOR K (Coeficiente Oficial de Redeterminación)', colPositions[0] + 3, yPos + 5.2);
+
+      doc.text(fmtFactor(results.min.k), colPositions[1] + colWidths[1] - 3, yPos + 5.2, { align: 'right' });
+      doc.text(fmtFactor(results.opt.k), colPositions[2] + colWidths[2] - 3, yPos + 5.2, { align: 'right' });
+      doc.text(fmtFactor(results.max.k), colPositions[3] + colWidths[3] - 3, yPos + 5.2, { align: 'right' });
+
+      // PAGE 2 (Charts & conclusions)
+      doc.addPage();
+      drawHeader(2);
+      yPos = 38;
+
+      // III. GRAPHIC COMPARISONS (Vector Graphic Drawings inside PDF)
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(rgbPrimary[0], rgbPrimary[1], rgbPrimary[2]);
+      doc.text('III. ANÁLISIS GRÁFICO DE OFERTAS Y ESTRUCTURA DE COSTOS', margin, yPos);
+      yPos += 5;
+
+      // Draw visual bar charts
+      // Total offer chart
+      const chartX = margin + 10;
+      const chartY = yPos + 40;
+      const chartW = 75;
+      const chartH = 38;
+
+      doc.setDrawColor(217, 210, 197);
+      doc.setLineWidth(0.3);
+      doc.line(chartX, chartY, chartX + chartW, chartY); // X axis
+      doc.line(chartX, chartY, chartX, chartY - chartH); // Y axis
+
+      // Draw grid lines
+      for (let i = 1; i <= 4; i++) {
+        const gridY = chartY - (chartH * i / 4);
+        doc.setDrawColor(240, 235, 225);
+        doc.line(chartX, gridY, chartX + chartW, gridY);
+      }
+
+      // Values scaling factor
+      const maxVal = Math.max(results.min.pv_total, results.opt.pv_total, results.max.pv_total) * 1.1;
+      const getBarHeight = (val: number) => (val / maxVal) * chartH;
+
+      const barW = 12;
+      const barSpacing = (chartW - (barW * 3)) / 4;
+
+      const scenariosList = [
+        { label: 'Mínimo', val: results.min.pv_total, color: rgbSecondary },
+        { label: 'Óptimo', val: results.opt.pv_total, color: rgbPrimary },
+        { label: 'Máximo', val: results.max.pv_total, color: rgbAccent }
+      ];
+
+      scenariosList.forEach((sc, idx) => {
+        const h = getBarHeight(sc.val);
+        const bx = chartX + barSpacing + (idx * (barW + barSpacing));
+        const by = chartY - h;
+
+        doc.setFillColor(sc.color[0], sc.color[1], sc.color[2]);
+        doc.rect(bx, by, barW, h, 'F');
+        doc.setDrawColor(rgbDark[0], rgbDark[1], rgbDark[2]);
+        doc.setLineWidth(0.1);
+        doc.rect(bx, by, barW, h, 'S');
+
+        // Draw value over bar
+        doc.setTextColor(rgbDark[0], rgbDark[1], rgbDark[2]);
+        doc.setFont('Helvetica', 'bold');
+        doc.setFontSize(7);
+        doc.text(`$${(sc.val / 1e6).toFixed(1)}M`, bx + (barW/2), by - 1.5, { align: 'center' });
+
+        // Label under bar
+        doc.setFont('Helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.text(sc.label, bx + (barW/2), chartY + 4, { align: 'center' });
+      });
+
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(rgbDark[0], rgbDark[1], rgbDark[2]);
+      doc.text('Comparativa del Precio Final ($)', chartX + (chartW / 2), chartY - chartH - 4, { align: 'center' });
+
+
+      // CHART 2: Desglose de Gastos en Coeficientes (Óptimo)
+      const chart2X = margin + 100;
+      const chart2Y = chartY;
+      const chart2W = 65;
+      const chart2H = chartH;
+
+      // Draw beautiful Segmented Stacked Bar representation of Óptimo Scenario
+      const optRes = results.opt;
+      const distribution = [
+        { name: 'Directo', val: optRes.cd, color: [90, 113, 110] }, // Primary
+        { name: 'Indirecto', val: optRes.ci + optRes.imp + optRes.seg + optRes.gar + optRes.sel + optRes.apo, color: [113, 113, 90] }, // Secondary
+        { name: 'Gastos', val: optRes.gg + optRes.infl + optRes.fin, color: [164, 148, 126] }, // Earth
+        { name: 'Beneficio', val: optRes.ben, color: [140, 106, 90] }, // Accent
+        { name: 'Fisco', val: optRes.iibb + optRes.cheque + optRes.iva, color: [60, 58, 54] }, // Dark Coal
+      ];
+
+      const sumDist = distribution.reduce((acc, d) => acc + d.val, 0);
+
+      // Draw segmented card block
+      let blockY = chart2Y - chart2H + 4;
+      let blockX = chart2X + 2;
+      const blockWidth = 24;
+
+      distribution.forEach((dist) => {
+        const pct = dist.val / sumDist;
+        const segmentH = pct * (chart2H - 4);
+
+        doc.setFillColor(dist.color[0], dist.color[1], dist.color[2]);
+        doc.rect(blockX, blockY, blockWidth, segmentH, 'F');
+        doc.setDrawColor(255, 255, 255);
+        doc.setLineWidth(0.3);
+        doc.rect(blockX, blockY, blockWidth, segmentH, 'S');
+
+        // Label on the right
+        doc.setTextColor(rgbDark[0], rgbDark[1], rgbDark[2]);
+        doc.setFont('Helvetica', 'bold');
+        doc.setFontSize(7.5);
+        doc.text(`${dist.name}: ${(pct * 100).toFixed(1)}%`, blockX + blockWidth + 5, blockY + (segmentH / 2) + 1.5);
+
+        blockY += segmentH;
+      });
+
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.text('Distribución de Erogación (Óptimo)', chart2X + 20, chart2Y - chart2H, { align: 'center' });
+
+      yPos += 54;
+
+      // IV. EXECUTIVE CONCLUSIONS
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(rgbPrimary[0], rgbPrimary[1], rgbPrimary[2]);
+      doc.text('IV. CONCLUSIONES DEL ANÁLISIS POLINÓMICO Y GESTIÓN DE RIESGOS', margin, yPos);
+      yPos += 4;
+
+      // Draw bounding box for conclusions
+      doc.setFillColor(rgbBgNeutral[0], rgbBgNeutral[1], rgbBgNeutral[2]);
+      doc.rect(margin, yPos, contentWidth, 75, 'F');
+      doc.setDrawColor(217, 210, 197);
+      doc.setLineWidth(0.2);
+      doc.rect(margin, yPos, contentWidth, 75, 'S');
+
+      doc.setTextColor(rgbDark[0], rgbDark[1], rgbDark[2]);
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(8.5);
+
+      const introText = "El cálculo del coeficiente multiplicador polinómico K se fundamenta en la legislación de obra gubernamental de la Provincia de Santa Fe. Los tres escenarios simulados proveen un espectro estratégico clave para los tomadores de decisiones antes de proceder al sellado contractual y la apertura del pliego:";
+      const introLines = doc.splitTextToSize(introText, contentWidth - 10);
+      doc.text(introLines, margin + 5, yPos + 6);
+
+      let textY = yPos + 18;
+
+      // Bullet points
+      const bullet1 = `• ESCENARIO ÓPTIMO (Equilibrado) - K = ${fmtFactor(results.opt.k)}: Contempla una oferta robusta de ${fmtLocal(results.opt.pv_total)} con un impacto inflacionario estimado de ${inputs.inf_opt}% y beneficio de ${inputs.ben_opt}%. Provee un blindaje fiscal e imprevisto integral, reduciendo el riesgo de descalce por alzas imprevistas de asfalto y áridos viales.`;
+      const bullet1Lines = doc.splitTextToSize(bullet1, contentWidth - 10);
+      doc.setFont('Helvetica', 'bold');
+      doc.text(bullet1Lines, margin + 5, textY);
+      textY += (bullet1Lines.length * 4.2);
+
+      const bullet2 = `• ESCENARIO MÍNIMO (Agresivo) - K = ${fmtFactor(results.min.k)}: Con una oferta de ${fmtLocal(results.min.pv_total)}, asume una inflación de ${inputs.inf_min}% y beneficios reducidos de ${inputs.ben_min}%. Su implementación eleva la probabilidad de ganar la licitación, pero expone sustancialmente el balance técnico ante fallos en subrasantes viales o imprevistos fluviales en Santa Fe.`;
+      const bullet2Lines = doc.splitTextToSize(bullet2, contentWidth - 10);
+      doc.setFont('Helvetica', 'normal');
+      doc.text(bullet2Lines, margin + 5, textY);
+      textY += (bullet2Lines.length * 4.2);
+
+      const bullet3 = `• ESCENARIO MÁXIMO (Protegido) - K = ${fmtFactor(results.max.k)}: Oferta cotizada en ${fmtLocal(results.max.pv_total)} para amortiguar desvíos extraordinarios de inflación (${inputs.inf_max}%) y resguardar un margen superior (${inputs.ben_max}%). Óptimo ante sospechas de alta dispersión de precios en áridos en corralones provinciales.`;
+      const bullet3Lines = doc.splitTextToSize(bullet3, contentWidth - 10);
+      doc.text(bullet3Lines, margin + 5, textY);
+      
+      yPos += 82;
+
+      // AUDITING / SIGNATURE SECTION
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(rgbSecondary[0], rgbSecondary[1], rgbSecondary[2]);
+      doc.text('V. REVISIÓN Y REGISTRO AUDITOR DE LICITACIONES', margin, yPos);
+      yPos += 5;
+
+      // Sign lines
+      const signW = 50;
+      doc.setDrawColor(217, 210, 197);
+      doc.setLineWidth(0.4);
+      
+      // Line Left
+      doc.line(margin + 15, yPos + 18, margin + 15 + signW, yPos + 18);
+      // Line Right
+      doc.line(margin + contentWidth - 15 - signW, yPos + 18, margin + contentWidth - 15, yPos + 18);
+
+      doc.setTextColor(rgbDark[0], rgbDark[1], rgbDark[2]);
+      doc.setFontSize(7.5);
+      doc.setFont('Helvetica', 'bold');
+      doc.text('REP. TÉCNICO VIAL / INGENIERÍA', margin + 15 + (signW / 2), yPos + 22, { align: 'center' });
+      doc.text('GERENTE DE FINANZAS / COMPLEMENTO', margin + contentWidth - 15 - (signW / 2), yPos + 22, { align: 'center' });
+
+      doc.setFont('Helvetica', 'normal');
+      doc.setTextColor(110, 110, 110);
+      doc.text('Firma autorizada y aclaración', margin + 15 + (signW / 2), yPos + 26, { align: 'center' });
+      doc.text('Aprobación presupuestaria contractual', margin + contentWidth - 15 - (signW / 2), yPos + 26, { align: 'center' });
+
+      // Save the document!
+      doc.save(`informe_ejecutivo_polinomico_santa_fe_${new Date().getFullYear()}.pdf`);
+      setExportSuccess(true);
+      setTimeout(() => setExportSuccess(false), 3000);
+    } catch (e) {
+      console.error("Error creating executive PDF:", e);
+    }
+  };
+
   // Data for Recharts Bar Chart
   const barChartData = useMemo(() => {
     return [
@@ -692,28 +1187,113 @@ export default function App() {
   const advancePercentOpt = Math.min(100, (advanceValue / results.opt.c_total) * 100);
   const advancePercentMax = Math.min(100, (advanceValue / results.max.c_total) * 100);
 
+  // Memoized Phases specification for the Gantt Diagram
+  const phasesData = useMemo(() => {
+    return [
+      {
+        id: 1,
+        name: "Instalación de Obrador, Replanteo e Ingeniería",
+        start: 1,
+        end: Math.max(2, Math.ceil(plazoObra * 0.15)),
+        progress: gp1,
+        setProgress: setGp1,
+        costPct: 0.08,
+        colorClass: "bg-[#71715A]",
+        progressColorClass: "bg-[#5E5E4A]",
+        milestone: "Firma de Inicio y Replanteo del Obrador",
+        milestoneMonth: 1,
+      },
+      {
+        id: 2,
+        name: "Movimiento de Suelos, Desmonte y Excavaciones",
+        start: Math.max(2, Math.ceil(plazoObra * 0.1)),
+        end: Math.max(3, Math.ceil(plazoObra * 0.45)),
+        progress: gp2,
+        setProgress: setGp2,
+        costPct: 0.18,
+        colorClass: "bg-[#A4947E]",
+        progressColorClass: "bg-[#8A7965]",
+        milestone: "Compactación de la Base Estabilizada",
+        milestoneMonth: Math.max(2, Math.ceil(plazoObra * 0.35)),
+      },
+      {
+        id: 3,
+        name: "Obras de Arte, Alcantarillas y Canalización Pluvial",
+        start: Math.max(3, Math.ceil(plazoObra * 0.25)),
+        end: Math.max(4, Math.ceil(plazoObra * 0.6)),
+        progress: gp3,
+        setProgress: setGp3,
+        costPct: 0.12,
+        colorClass: "bg-[#8C6A5A]",
+        progressColorClass: "bg-[#765445]",
+        milestone: "Pruebas Hidráulicas de Sumideros Completas",
+        milestoneMonth: Math.max(3, Math.ceil(plazoObra * 0.5)),
+      },
+      {
+        id: 4,
+        name: "Pavimentación Calzada Principal (Hormigón H-30)",
+        start: Math.max(4, Math.ceil(plazoObra * 0.4)),
+        end: Math.max(5, Math.ceil(plazoObra * 0.85)),
+        progress: gp4,
+        setProgress: setGp4,
+        costPct: 0.50, // 50% of direct cost
+        colorClass: "bg-[#5A716E]",
+        progressColorClass: "bg-[#455755]",
+        milestone: "Colocación final del Hormigón H-30 contractual",
+        milestoneMonth: Math.max(4, Math.ceil(plazoObra * 0.75)),
+      },
+      {
+        id: 5,
+        name: "Señalización Vertical, Horizontal y Guardarrailes",
+        start: Math.max(5, Math.ceil(plazoObra * 0.8)),
+        end: Math.max(6, Math.ceil(plazoObra * 0.95)),
+        progress: gp5,
+        setProgress: setGp5,
+        costPct: 0.07,
+        colorClass: "bg-[#2D2A26]",
+        progressColorClass: "bg-[#1C1A18]",
+        milestone: "Demarcación Calzada Pintura Reflectiva",
+        milestoneMonth: Math.max(5, Math.ceil(plazoObra * 0.9)),
+      },
+      {
+        id: 6,
+        name: "Recepción Provisional, Limpieza y Certificación Final",
+        start: Math.max(6, Math.ceil(plazoObra * 0.9)),
+        end: plazoObra,
+        progress: gp6,
+        setProgress: setGp6,
+        costPct: 0.05,
+        colorClass: "bg-[#B6A699]",
+        progressColorClass: "bg-[#9A8A7C]",
+        milestone: "Inauguración Vial e Inspección Fiscal",
+        milestoneMonth: plazoObra,
+      },
+    ];
+  }, [plazoObra, gp1, gp2, gp3, gp4, gp5, gp6, results.opt.cd]);
+
   return (
     <div className="min-h-screen bg-[#F5F2ED] text-[#2D2A26] font-sans selection:bg-[#5A716E] selection:text-white">
       {/* Top Professional Header Banner */}
       <header className="bg-[#F5F2ED] text-[#2D2A26] relative overflow-hidden border-b border-[#D9D2C5]">
         <div className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8 relative z-10">
-          <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-6">
-            <div className="space-y-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.05em] bg-[#E0DCD4] text-[#5A554E]">
-                  Licitación Vial Pública 02/2026
-                </span>
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.05em] bg-[#E0DCD4] text-[#5A554E]">
-                  Fórmula Polinómica
-                </span>
-              </div>
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-6">
+            <div className="space-y-3 flex-1 w-full">
               <h1 className="text-3xl sm:text-4xl font-bold font-display italic tracking-tight text-[#3A3732] mb-1">
                 Calculadora Vial Multiescenario
               </h1>
-              <p className="text-[#7A746B] text-xs sm:text-sm max-w-3xl leading-relaxed">
-                Estructura de costos avanzada para pavimentación con amortización inteligente de equipos propios, 
-                imprevistos técnicos y amortiguación por anticipo financiero de H-30 (Pliego contractual: 230m³).
-              </p>
+              <div className="space-y-1 w-full max-w-4xl">
+                <label htmlFor="licitacion-info-textarea" className="block text-[10px] font-bold uppercase tracking-wider text-[#71715A] flex items-center gap-1.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-[#5A716E]"></span>
+                  Información de la Licitación Analizada
+                </label>
+                <textarea
+                  id="licitacion-info-textarea"
+                  value={licitacionInfo}
+                  onChange={(e) => setLicitacionInfo(e.target.value)}
+                  className="w-full min-h-[64px] p-2.5 text-xs sm:text-sm bg-white border border-[#D9D2C5] rounded-xl text-[#3A3732] focus:outline-none focus:ring-2 focus:ring-[#5A716E]/15 focus:border-[#5A716E] leading-relaxed resize-y font-sans transition-all shadow-xs"
+                  placeholder="Complete aquí los datos de la licitación provincial, expediente o pliego analizado..."
+                />
+              </div>
             </div>
             <div className="flex flex-wrap items-center gap-3">
               <button
@@ -730,6 +1310,13 @@ export default function App() {
               >
                 <FileSpreadsheet className="h-3.5 w-3.5" />
                 Planilla Excel (.xlsx)
+              </button>
+              <button
+                onClick={handleExportPDF}
+                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-wider text-white bg-[#5A716E] hover:bg-[#485B58] rounded-lg transition-all shadow-sm cursor-pointer"
+              >
+                <FileText className="h-3.5 w-3.5" />
+                Reporte PDF (.pdf)
               </button>
               <button
                 onClick={handleExportCSV}
@@ -1221,6 +1808,43 @@ export default function App() {
                     </div>
                   </div>
                 </div>
+
+                {/* Ajuste Rápido de Contingencia */}
+                <div className="mt-4 p-4 bg-[#FAF8F5] rounded-2xl border border-[#D9D2C5]/80 space-y-3 shadow-xs">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] font-extrabold text-[#8C6A5A] uppercase tracking-wider flex items-center gap-1.5">
+                      <TrendingUp className="h-3.5 w-3.5 text-[#8C6A5A]" />
+                      Ajuste Rápido: Factor de Contingencia
+                    </span>
+                    <span className="font-mono text-xs font-bold text-[#8C6A5A] bg-[#8C6A5A]/10 px-2 py-0.5 rounded-lg border border-[#8C6A5A]/20">
+                      x{inputs.factor_contingencia.toFixed(2)}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-[#7A746B] leading-relaxed">
+                    Incrementa o reduce de forma lineal todos los rubros indirectos y provisiones operativas durante la etapa final del pliego de licitación.
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="range"
+                      min="0.5"
+                      max="2.0"
+                      step="0.05"
+                      value={inputs.factor_contingencia}
+                      onChange={(e) => handleInputChange('factor_contingencia', e.target.value)}
+                      className="flex-1 h-1 bg-[#D9D2C5]/50 rounded-lg appearance-none cursor-pointer accent-[#8C6A5A]"
+                    />
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0.1"
+                      max="5.0"
+                      value={inputs.factor_contingencia}
+                      onChange={(e) => handleInputChange('factor_contingencia', e.target.value)}
+                      className="w-16 px-1 py-1 text-center font-mono text-xs bg-white border border-[#D9D2C5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#8C6A5A]/15 focus:border-[#8C6A5A] text-[#2D2A26] font-bold"
+                    />
+                  </div>
+                </div>
+
                 </div>
 
               {/* SECTION 3: VARIABLES MUTABLES POR ESCENARIO */}
@@ -1450,6 +2074,18 @@ export default function App() {
                   <TrendingUp className="h-4 w-4 text-[#5A716E]" />
                   Fórmulas e Índices K
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('gantt')}
+                  className={`flex-1 inline-flex items-center justify-center gap-2 py-2 px-3.5 rounded-xl font-bold uppercase tracking-wider text-[10px] transition-all focus:outline-none cursor-pointer ${
+                    activeTab === 'gantt'
+                      ? 'bg-white text-[#2D2A26] shadow-xs'
+                      : 'text-[#7A746B] hover:text-[#2D2A26]'
+                  }`}
+                >
+                  <Calendar className="h-4 w-4 text-[#5A716E]" />
+                  Cronograma Gantt
+                </button>
               </div>
 
               <div className="p-4 sm:p-6">
@@ -1657,6 +2293,229 @@ export default function App() {
                       </div>
 
                     </div>
+
+                    {/* NEW SECTION: DETAILED INFLATION SENSITIVITY CURVES */}
+                    <div className="border-t border-[#D9D2C5]/60 pt-8 space-y-6">
+                      
+                      {/* Section Header with Controls */}
+                      <div className="bg-[#F5F2ED] p-5 rounded-2xl border border-[#D9D2C5] flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+                        <div className="space-y-1.5 flex-1">
+                          <h4 className="font-bold text-sm text-[#3A3732] uppercase tracking-wider flex items-center gap-2">
+                            <TrendingUp className="h-4 w-4 text-[#5A716E]" />
+                            Modelado de Sensibilidad y Elasticidad de la Oferta viales
+                          </h4>
+                          <p className="text-xs text-[#7A746B] leading-relaxed max-w-4xl font-sans">
+                            Simula en tiempo real la respuesta matemática del presupuesto vial ante variaciones continuas de la inflación supuesta. Compara la pendiente de incremento del Coeficiente de Reajuste <strong>K</strong> y la oferta de licitación final para los escenarios proyectados.
+                          </p>
+                        </div>
+                        
+                        {/* Interactive Widgets */}
+                        <div className="flex flex-wrap items-center gap-4 shrink-0 sm:flex-nowrap w-full lg:w-auto">
+                          {/* Toggle Metric */}
+                          <div className="bg-white p-1 rounded-xl border border-[#D9D2C5] flex gap-1 w-full sm:w-auto">
+                            <button
+                              type="button"
+                              onClick={() => setSensitivityMetric('k')}
+                              className={`flex-1 sm:flex-initial px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                sensitivityMetric === 'k'
+                                  ? 'bg-[#5A716E] text-white shadow-xs'
+                                  : 'text-[#7A746B] hover:text-[#2D2A26]'
+                              }`}
+                            >
+                              Factor K
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSensitivityMetric('pv')}
+                              className={`flex-1 sm:flex-initial px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                sensitivityMetric === 'pv'
+                                  ? 'bg-[#5A716E] text-white shadow-xs'
+                                  : 'text-[#7A746B] hover:text-[#2D2A26]'
+                              }`}
+                            >
+                              Oferta ($)
+                            </button>
+                          </div>
+
+                          {/* Dynamic Range Slider */}
+                          <div className="bg-white px-3.5 py-1.5 rounded-xl border border-[#D9D2C5] min-w-[200px] w-full sm:w-auto shadow-xs">
+                            <div className="flex justify-between items-center text-[10px] uppercase font-bold text-[#71715A] mb-1">
+                              <span>Simular hasta</span>
+                              <span>{inflMaxRange}% Inflación</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="10"
+                              max="50"
+                              step="5"
+                              value={inflMaxRange}
+                              onChange={(e) => setInflMaxRange(parseInt(e.target.value))}
+                              className="w-full h-1 bg-[#D9D2C5]/50 rounded-lg appearance-none cursor-pointer accent-[#5A716E]"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Content Grid */}
+                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
+                        
+                        {/* Line Chart Panel */}
+                        <div className="lg:col-span-8 bg-white p-5 rounded-2xl border border-[#D9D2C5] space-y-4 shadow-xs">
+                          <div className="flex justify-between items-center text-xs font-bold text-[#7A746B] uppercase tracking-wide">
+                            <span>
+                              Comportamiento de la Oferta ({sensitivityMetric === 'k' ? 'Factor K Polinómico' : 'Precio de Venta Total'}) por Curva de Inflación
+                            </span>
+                            <span className="font-mono text-[10px] text-[#A4947E]">{sensitivityData.length} puntos calculados</span>
+                          </div>
+
+                          <div className="h-72 sm:h-96 w-full font-sans">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <LineChart data={sensitivityData} margin={{ top: 10, right: 10, left: 10, bottom: 5 }}>
+                                <CartesianGrid strokeDasharray="3 3" opacity={0.15} stroke="#D9D2C5" />
+                                <XAxis 
+                                  dataKey="inflation" 
+                                  type="number"
+                                  domain={[0, inflMaxRange]}
+                                  tickFormatter={(val) => `${val.toFixed(1)}%`}
+                                  tick={{ fontSize: 10, fill: '#7A746B' }}
+                                />
+                                <YAxis 
+                                  domain={['auto', 'auto']}
+                                  tickFormatter={(val) => sensitivityMetric === 'k' ? val.toFixed(4) : `$${(val / 1e6).toFixed(1)}M`}
+                                  tick={{ fontSize: 10, fill: '#7A746B' }}
+                                />
+                                <ReTooltip 
+                                  formatter={(value: any, name: string) => {
+                                    const parsedName = name === 'min_k' || name === 'min_pv' 
+                                      ? 'Mínimo (Agresivo)' 
+                                      : name === 'opt_k' || name === 'opt_pv' 
+                                        ? 'Óptimo (Estándar)' 
+                                        : 'Máximo (Protegido)';
+                                    const formattedVal = sensitivityMetric === 'k' 
+                                      ? Number(value).toFixed(4) 
+                                      : fmtLocal(Number(value));
+                                    return [formattedVal, parsedName];
+                                  }}
+                                  labelFormatter={(label: any) => `Inflación Supuesta: ${Number(label).toFixed(1)}%`}
+                                  contentStyle={{ backgroundColor: '#F5F2ED', border: '1px solid #D9D2C5', borderRadius: '12px', fontSize: '11px' }}
+                                />
+                                <Legend wrapperStyle={{ fontSize: '10px' }} />
+                                <Line 
+                                  type="monotone" 
+                                  dataKey={sensitivityMetric === 'k' ? 'min_k' : 'min_pv'} 
+                                  stroke="#71715A" 
+                                  strokeWidth={2}
+                                  name={sensitivityMetric === 'k' ? 'min_k' : 'min_pv'}
+                                  dot={{ r: 2 }}
+                                  activeDot={{ r: 5 }}
+                                />
+                                <Line 
+                                  type="monotone" 
+                                  dataKey={sensitivityMetric === 'k' ? 'opt_k' : 'opt_pv'} 
+                                  stroke="#5A716E" 
+                                  strokeWidth={3}
+                                  name={sensitivityMetric === 'k' ? 'opt_k' : 'opt_pv'}
+                                  dot={{ r: 3 }}
+                                  activeDot={{ r: 6 }}
+                                />
+                                <Line 
+                                  type="monotone" 
+                                  dataKey={sensitivityMetric === 'k' ? 'max_k' : 'max_pv'} 
+                                  stroke="#8C6A5A" 
+                                  strokeWidth={2}
+                                  name={sensitivityMetric === 'k' ? 'max_k' : 'max_pv'}
+                                  dot={{ r: 2 }}
+                                  activeDot={{ r: 5 }}
+                                />
+                              </LineChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </div>
+
+                        {/* Analytical & Elasticity Explanatory Panel */}
+                        <div className="lg:col-span-4 bg-white p-5 rounded-2xl border border-[#D9D2C5] flex flex-col justify-between space-y-4 shadow-xs">
+                          <div className="space-y-4">
+                            <span className="text-xs font-bold text-[#7A746B] uppercase tracking-wide block border-b border-[#F0EDE9] pb-2">
+                              Reporte de Elasticidad e Impacto
+                            </span>
+
+                            <p className="text-[11px] text-[#7A746B] leading-relaxed font-sans">
+                              La inclinación o pendiente de las curvas demuestra la **elasticidad lineal** del presupuesto respecto al incremento en la tasa de inflación en cada escenario:
+                            </p>
+
+                            <div className="space-y-3">
+                              {/* Scenario Min Slope */}
+                              <div className="p-3 bg-[#71715A]/5 rounded-xl border border-[#71715A]/10 space-y-1">
+                                <div className="flex justify-between items-center">
+                                  <span className="text-[10px] font-bold text-[#71715A] uppercase tracking-wide">Mínimo (Agresivo)</span>
+                                  <span className="text-[10px] font-mono font-bold text-[#71715A]">b = {inputs.ben_min}%</span>
+                                </div>
+                                <div className="flex justify-between items-baseline font-mono text-xs">
+                                  <span className="text-gray-500 text-[10px]">Δ K Factor:</span>
+                                  <span className="font-bold text-gray-800">
+                                    +{((calcEscenario(inputs, 10, inputs.ben_min).k - calcEscenario(inputs, 0, inputs.ben_min).k) / 10).toFixed(5)} / 1%
+                                  </span>
+                                </div>
+                                <div className="flex justify-between items-baseline font-mono text-xs">
+                                  <span className="text-gray-500 text-[10px]">Δ Oferta Total:</span>
+                                  <span className="font-bold text-[#71715A]">
+                                    +{fmtLocal(((calcEscenario(inputs, 10, inputs.ben_min).pv_total - calcEscenario(inputs, 0, inputs.ben_min).pv_total) / 10))}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Scenario Opt Slope */}
+                              <div className="p-3 bg-[#5A716E]/5 rounded-xl border border-[#5A716E]/10 space-y-1">
+                                <div className="flex justify-between items-center">
+                                  <span className="text-[10px] font-bold text-[#5A716E] uppercase tracking-wide">Óptimo (Estándar)</span>
+                                  <span className="text-[10px] font-mono font-bold text-[#5A716E]">b = {inputs.ben_opt}%</span>
+                                </div>
+                                <div className="flex justify-between items-baseline font-mono text-xs">
+                                  <span className="text-gray-500 text-[10px]">Δ K Factor:</span>
+                                  <span className="font-bold text-gray-800">
+                                    +{((calcEscenario(inputs, 10, inputs.ben_opt).k - calcEscenario(inputs, 0, inputs.ben_opt).k) / 10).toFixed(5)} / 1%
+                                  </span>
+                                </div>
+                                <div className="flex justify-between items-baseline font-mono text-xs">
+                                  <span className="text-gray-500 text-[10px]">Δ Oferta Total:</span>
+                                  <span className="font-bold text-[#5A716E]">
+                                    +{fmtLocal(((calcEscenario(inputs, 10, inputs.ben_opt).pv_total - calcEscenario(inputs, 0, inputs.ben_opt).pv_total) / 10))}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Scenario Max Slope */}
+                              <div className="p-3 bg-[#8C6A5A]/5 rounded-xl border border-[#8C6A5A]/10 space-y-1">
+                                <div className="flex justify-between items-center">
+                                  <span className="text-[10px] font-bold text-[#8C6A5A] uppercase tracking-wide">Máximo (Protegido)</span>
+                                  <span className="text-[10px] font-mono font-bold text-[#8C6A5A]">b = {inputs.ben_max}%</span>
+                                </div>
+                                <div className="flex justify-between items-baseline font-mono text-xs">
+                                  <span className="text-gray-500 text-[10px]">Δ K Factor:</span>
+                                  <span className="font-bold text-gray-800">
+                                    +{((calcEscenario(inputs, 10, inputs.ben_max).k - calcEscenario(inputs, 0, inputs.ben_max).k) / 10).toFixed(5)} / 1%
+                                  </span>
+                                </div>
+                                <div className="flex justify-between items-baseline font-mono text-xs">
+                                  <span className="text-gray-500 text-[10px]">Δ Oferta Total:</span>
+                                  <span className="font-bold text-[#8C6A5A]">
+                                    +{fmtLocal(((calcEscenario(inputs, 10, inputs.ben_max).pv_total - calcEscenario(inputs, 0, inputs.ben_max).pv_total) / 10))}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="mt-4 p-3 bg-[#F5F2ED] rounded-xl border border-[#D9D2C5] text-[10px] text-[#7A746B] leading-relaxed font-sans">
+                            <span className="font-bold text-[#3A3732] block uppercase tracking-wider mb-0.5">Influencia del Acopio:</span>
+                            El acopio financiero por anticipo contractual de H-30 disminuye la base de financiamiento neta en obra, lo que a su vez mitiga eficazmente la pendiente de ascenso.
+                          </div>
+                        </div>
+
+                      </div>
+
+                    </div>
+
                   </div>
                 )}                   {/* TAB 3: FORMULA INSPECTOR */}
                 {activeTab === 'formulas' && (
@@ -1757,6 +2616,201 @@ export default function App() {
                   </div>
                 )}
 
+                {activeTab === 'gantt' && (
+                  <div className="space-y-6">
+                    {/* Header Controls for Gantt */}
+                    <div className="bg-[#F5F2ED] p-5 rounded-2xl border border-[#D9D2C5] space-y-4">
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                        <div className="space-y-1">
+                          <h4 className="font-bold text-sm text-[#3A3732] uppercase tracking-wider flex items-center gap-2">
+                            <Layers className="h-4 w-4 text-[#5A716E]" />
+                            Cronograma de Obra Vial Estimado (Diagrama Gantt)
+                          </h4>
+                          <p className="text-xs text-[#7A746B] leading-relaxed">
+                            Visualización de las fases del proyecto de infraestructura, hitos contractuales clave y su avance físico. 
+                            Las fases se adaptan dinámicamente según el plazo total y cargan flujos del Costo Directo base.
+                          </p>
+                        </div>
+                        
+                        {/* Duration control slider */}
+                        <div className="bg-white px-4 py-2.5 rounded-xl border border-[#D9D2C5] shrink-0 w-full sm:w-auto shadow-xs">
+                          <div className="flex justify-between items-center gap-4 mb-1">
+                            <span className="text-[10px] font-bold text-[#71715A] uppercase tracking-wide">Plazo Obra Total</span>
+                            <span className="text-xs font-mono font-bold text-[#5A716E] bg-[#5A716E]/10 px-2 py-0.5 rounded-lg">{plazoObra} Meses</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="6"
+                            max="24"
+                            step="1"
+                            value={plazoObra}
+                            onChange={(e) => setPlazoObra(parseInt(e.target.value))}
+                            className="w-full sm:w-48 h-1.5 bg-[#D9D2C5]/50 rounded-lg appearance-none cursor-pointer accent-[#5A716E]"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Gantt Graphics Grid Wrapper */}
+                    <div className="bg-white rounded-2xl border border-[#D9D2C5] overflow-hidden shadow-xs">
+                      <div className="p-4 sm:p-6 overflow-x-auto">
+                        <div className="min-w-[800px] space-y-5">
+                          
+                          {/* Row: Weeks / Month Grid Headers */}
+                          <div className="grid grid-cols-12 gap-4 items-center">
+                            <div className="col-span-4">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-[#71715A]">Especificación y Costeo de Fases</span>
+                            </div>
+                            <div className="col-span-8">
+                              <div className="grid" style={{ gridTemplateColumns: `repeat(${plazoObra}, minmax(0, 1fr))` }}>
+                                {Array.from({ length: plazoObra }, (_, i) => i + 1).map((mes) => (
+                                  <div key={mes} className="text-center font-mono text-[10px] font-bold text-[#7A746B] border-l border-[#F0EDE9] py-1">
+                                    M{mes}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Phases Render Loop */}
+                          <div className="space-y-4 border-t border-[#F0EDE9] pt-4">
+                            {phasesData.map((phase) => {
+                              const isCompleted = phase.progress === 100;
+                              const estimatedCost = results.opt.cd * phase.costPct;
+
+                              return (
+                                <div key={phase.id} className="grid grid-cols-12 gap-4 items-center group py-2 rounded-xl hover:bg-[#F9F8F6]/50 transition-colors">
+                                  {/* Left details panel */}
+                                  <div className="col-span-4 space-y-1.5 pr-2 border-r border-[#F0EDE9]">
+                                    <div className="flex justify-between items-start gap-2">
+                                      <h5 className="font-bold text-xs text-[#2D2A26] leading-snug">{phase.name}</h5>
+                                      <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-[#F5F2ED] text-[#71715A] shrink-0">
+                                        M{phase.start} - M{phase.end}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center justify-between text-[11px] text-[#7A746B]">
+                                      <span className="font-mono">Asignación: <strong className="text-[#3A3732] font-semibold">{fmtLocal(estimatedCost)}</strong> ({(phase.costPct * 100).toFixed(0)}%)</span>
+                                      <span className="font-mono font-bold text-[#5A716E] bg-[#5A716E]/5 px-1.5 py-0.2 rounded">{phase.progress}%</span>
+                                    </div>
+                                    
+                                    {/* Small slider inside row to let user adjust progress easily */}
+                                    <div className="flex items-center gap-2 pt-1">
+                                      <span className="text-[9px] font-bold text-[#A4947E] uppercase">Ajustar Avance:</span>
+                                      <input
+                                        type="range"
+                                        min="0"
+                                        max="100"
+                                        step="5"
+                                        value={phase.progress}
+                                        onChange={(e) => phase.setProgress(parseInt(e.target.value))}
+                                        className="h-1 bg-[#D9D2C5]/50 rounded-lg appearance-none cursor-pointer accent-[#5A716E] flex-1 max-w-[120px]"
+                                      />
+                                    </div>
+                                  </div>
+
+                                  {/* Right side: Dynamic Grid and Bar */}
+                                  <div className="col-span-8 relative py-3 font-sans">
+                                    {/* Monthly background column lines */}
+                                    <div className="absolute inset-0 grid" style={{ gridTemplateColumns: `repeat(${plazoObra}, minmax(0, 1fr))` }}>
+                                      {Array.from({ length: plazoObra }, (_, i) => i + 1).map((mes) => (
+                                        <div key={mes} className="border-l border-[#F0EDE9] h-full opacity-60"></div>
+                                      ))}
+                                      {/* Last rightmost border for layout completion */}
+                                      <div className="border-r border-[#F0EDE9] h-full absolute right-0 top-0 opacity-60"></div>
+                                    </div>
+
+                                    {/* The Horizontal Gantt Bar */}
+                                    <div className="grid relative z-10" style={{ gridTemplateColumns: `repeat(${plazoObra}, minmax(0, 1fr))` }}>
+                                      <div
+                                        className="h-7 rounded-lg overflow-hidden relative shadow-xs flex items-center transition-all duration-300"
+                                        style={{
+                                          gridColumn: `${phase.start} / ${phase.end + 1}`,
+                                          backgroundColor: `${phase.colorClass}1F`, // ~12% opacity
+                                          border: `1px solid ${phase.colorClass}50`,
+                                        }}
+                                      >
+                                        {/* Colored Progress Fill inside Bar */}
+                                        <div
+                                          className={`h-full opacity-85 transition-all duration-300 ${phase.colorClass}`}
+                                          style={{ width: `${phase.progress}%` }}
+                                        />
+
+                                        {/* Text info overlay centering inside the bar */}
+                                        <div className="absolute inset-0 flex items-center justify-between px-3 text-[10px] font-bold pointer-events-none">
+                                          <span className={`${isCompleted ? 'text-white' : 'text-[#3A3732]'} truncate max-w-[240px]`}>
+                                            {isCompleted ? "✓ Completado" : `En curso — Mes ${phase.start}`}
+                                          </span>
+                                          <span className={phase.progress > 50 && isCompleted ? 'text-white' : 'text-[#3A3732]'}>
+                                            {phase.progress}%
+                                          </span>
+                                        </div>
+                                      </div>
+
+                                      {/* Hito/Milestone Indicator (Diamond badge on the grid column) */}
+                                      <div
+                                        className="absolute -top-3.5 flex flex-col items-center z-20 pointer-events-none"
+                                        style={{
+                                          left: `calc(${((phase.milestoneMonth - 0.5) / plazoObra) * 100}% - 8px)`
+                                        }}
+                                        title={`Hito: ${phase.milestone} (Mes ${phase.milestoneMonth})`}
+                                      >
+                                        <div className={`h-4 w-4 transform rotate-45 border flex items-center justify-center shadow-xs transition-colors ${
+                                          isCompleted
+                                            ? 'bg-emerald-600 border-emerald-800 text-white'
+                                            : 'bg-amber-500 border-amber-700 text-white'
+                                        }`}>
+                                          <span className="transform -rotate-45 text-[7px] font-extrabold">H</span>
+                                        </div>
+                                      </div>
+
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Milestones / Checklist Box */}
+                    <div className="bg-white p-5 rounded-2xl border border-[#D9D2C5] shadow-xs">
+                      <h4 className="text-xs font-bold tracking-wider text-[#71715A] uppercase mb-4 flex items-center gap-2">
+                        <CheckCircle className="h-4 w-4 text-[#5A716E]" />
+                        Listado de Control de Hitos Críticos Viales
+                      </h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {phasesData.map((phase) => {
+                          const isCompleted = phase.progress === 100;
+                          return (
+                            <div key={phase.id} className="flex gap-3 items-start p-3 bg-[#F5F2ED]/40 rounded-xl border border-[#D9D2C5]/50">
+                              <span className={`inline-flex shrink-0 p-1 rounded-full text-white ${
+                                isCompleted ? 'bg-emerald-600' : 'bg-amber-500'
+                              }`}>
+                                <CheckCircle className="h-3.5 w-3.5" />
+                              </span>
+                              <div className="space-y-1">
+                                <span className="text-[10px] font-bold text-[#71715A] uppercase tracking-wide">
+                                  Hito de Fase {phase.id} — Mes {phase.milestoneMonth}
+                                </span>
+                                <h5 className="font-bold text-xs text-gray-900 leading-snug">{phase.milestone}</h5>
+                                <div className="flex gap-2 items-center">
+                                  <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded uppercase ${
+                                    isCompleted ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                                  }`}>
+                                    {isCompleted ? "Alcanzado" : `${phase.progress}% de avance`}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
               </div>
             </div>
 
@@ -1774,6 +2828,14 @@ export default function App() {
               <div className="flex flex-wrap gap-2 w-full sm:w-auto">
                 <button
                   type="button"
+                  onClick={handleExportPDF}
+                  className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-[#5A716E] hover:bg-[#475957] text-white rounded-xl text-xs font-bold hover:shadow-md transition-all cursor-pointer"
+                >
+                  <FileText className="h-4 w-4" />
+                  Descargar Reporte PDF (.pdf)
+                </button>
+                <button
+                  type="button"
                   onClick={handleExportExcel}
                   className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-[#71715A] hover:bg-[#5E5E4A] text-white rounded-xl text-xs font-bold hover:shadow-md transition-all cursor-pointer"
                 >
@@ -1783,7 +2845,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={handleExportJSON}
-                  className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-[#5A716E] hover:bg-[#475957] text-white rounded-xl text-xs font-bold hover:shadow-md transition-all cursor-pointer"
+                  className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-[#8C6A5A] hover:bg-[#785A4D] text-white rounded-xl text-xs font-bold hover:shadow-md transition-all cursor-pointer"
                 >
                   <Download className="h-4 w-4" />
                   Descargar JSON

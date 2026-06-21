@@ -23,6 +23,7 @@ export const DEFAULT_INPUTS: InputsState = {
   ben_opt: 9.0,
   inf_max: 7.0,
   ben_max: 12.0,
+  factor_contingencia: 1.0,
 };
 
 export const PRESETS = [
@@ -86,17 +87,18 @@ export function fmtFactor(v: number): string {
 export function calcEscenario(d: InputsState, inf_tasa: number, ben_tasa: number): ScenarioResult {
   const cd = d.base_cd;
   const anticipo_valor = d.base_cant_ant * d.base_p_h30;
+  const fc = d.factor_contingencia !== undefined ? d.factor_contingencia : 1.0;
 
-  const ci = cd * (d.t_ci / 100);
-  const seg = cd * (d.t_seg / 100);
-  const gar = cd * (d.t_gar / 100);
-  const sel = cd * (d.t_sel / 100);
-  const apo = cd * (d.t_apo / 100);
-  const imp = (cd + ci) * (d.t_imp / 100);
+  const ci = cd * (d.t_ci / 100) * fc;
+  const seg = cd * (d.t_seg / 100) * fc;
+  const gar = cd * (d.t_gar / 100) * fc;
+  const sel = cd * (d.t_sel / 100) * fc;
+  const apo = cd * (d.t_apo / 100) * fc;
+  const imp = (cd + ci) * (d.t_imp / 100) * fc;
   
   const sub5 = cd + ci + seg + gar + sel + apo + imp;
   const infl = sub5 * (inf_tasa / 100);
-  const gg = (sub5 + infl) * (d.t_gg / 100);
+  const gg = (sub5 + infl) * (d.t_gg / 100) * fc;
   
   const c_total = sub5 + infl + gg;
   

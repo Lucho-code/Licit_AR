@@ -21,6 +21,7 @@ export interface InputsState {
   ben_opt: number;
   inf_max: number;
   ben_max: number;
+  factor_contingencia: number;
 }
 
 export interface ScenarioResult {
