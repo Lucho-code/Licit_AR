@@ -5,6 +5,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import ExcelJS from 'exceljs';
 import {
   Calculator,
   ShieldAlert,
@@ -280,6 +281,351 @@ export default function App() {
     setTimeout(() => setExportSuccess(false), 3000);
   };
 
+  // Export as formatted Excel with active functional formulas
+  const handleExportExcel = async () => {
+    try {
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Simulación Polinómica');
+
+      // Configure gridlines
+      worksheet.views = [{ showGridLines: true }];
+
+      // Column widths
+      worksheet.columns = [
+        { key: 'colA', width: 4 },
+        { key: 'colB', width: 48 },
+        { key: 'colC', width: 22 },
+        { key: 'colD', width: 22 },
+        { key: 'colE', width: 22 },
+      ];
+
+      const styleRowRange = (rowNum: number, startCol: number, endCol: number, styles: any) => {
+        const row = worksheet.getRow(rowNum);
+        for (let c = startCol; c <= endCol; c++) {
+          const cell = row.getCell(c);
+          if (styles.fill) cell.fill = styles.fill;
+          if (styles.font) cell.font = styles.font;
+          if (styles.alignment) cell.alignment = styles.alignment;
+          if (styles.border) cell.border = styles.border;
+        }
+      };
+
+      // Title Block
+      worksheet.mergeCells('B2:E2');
+      const titleCell = worksheet.getCell('B2');
+      titleCell.value = 'CALCULADORA VIAL MULTIESCENARIO - FÓRMULA POLINÓMICA K';
+      titleCell.font = { name: 'Arial', size: 14, bold: true, color: { argb: 'FFFFFF' } };
+      titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+      titleCell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: '3A3732' }
+      };
+      worksheet.getRow(2).height = 40;
+
+      worksheet.mergeCells('B3:E3');
+      const subtitleCell = worksheet.getCell('B3');
+      subtitleCell.value = 'Licitación Vial Pública 02/2026 — Provincia de Santa Fe, Argentina (Planilla con Fórmulas Activas)';
+      subtitleCell.font = { name: 'Arial', size: 10, italic: true, color: { argb: '7A746B' } };
+      subtitleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+      worksheet.getRow(3).height = 20;
+
+      // Section I Header
+      worksheet.mergeCells('B5:E5');
+      const sec1Header = worksheet.getCell('B5');
+      sec1Header.value = 'SECCIÓN I: CONFIGURACIÓN GENERAL Y ELEMENTOS OPERATIVOS';
+      sec1Header.font = { name: 'Arial', size: 10, bold: true, color: { argb: '33322E' } };
+      sec1Header.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'EBE7DF' }
+      };
+      sec1Header.alignment = { horizontal: 'left', vertical: 'middle' };
+      worksheet.getRow(5).height = 25;
+
+      const addConfigRow = (rowNum: number, label: string, val: number, format: string) => {
+        worksheet.getCell(`B${rowNum}`).value = label;
+        worksheet.getCell(`C${rowNum}`).value = val;
+        worksheet.getCell(`C${rowNum}`).numFmt = format;
+        worksheet.getCell(`B${rowNum}`).font = { name: 'Arial', size: 9, bold: true, color: { argb: '5A554E' } };
+        worksheet.getCell(`C${rowNum}`).font = { name: 'Arial', size: 9, bold: true };
+        worksheet.getCell(`C${rowNum}`).alignment = { horizontal: 'right' };
+      };
+
+      addConfigRow(6, 'Costo Directo Base de Obra (CD)', inputs.base_cd, '"$"#,##0.00');
+      addConfigRow(7, 'Cantidad de Hormigón H-30 para acopio contractual (m³)', inputs.base_cant_ant, '#,##0');
+      addConfigRow(8, 'Precio unitario corriente de m³ de Hormigón H-30 ($)', inputs.base_p_h30, '"$"#,##0.00');
+
+      // Costo Acopio Formula
+      worksheet.getCell('B9').value = 'Monto de Acopio Anticipado Preventivo ($)';
+      worksheet.getCell('B9').font = { name: 'Arial', size: 9, bold: true, color: { argb: '71715A' } };
+      worksheet.getCell('C9').value = { formula: 'C7*C8' };
+      worksheet.getCell('C9').numFmt = '"$"#,##0.00';
+      worksheet.getCell('C9').font = { name: 'Arial', size: 9, bold: true, color: { argb: '71715A' } };
+      worksheet.getCell('C9').alignment = { horizontal: 'right' };
+
+      addConfigRow(10, 'Costo Indirecto (t_ci %)', inputs.t_ci / 100, '0.00%');
+      addConfigRow(11, 'Seguros ART / Responsabilidad Civil (t_seg %)', inputs.t_seg / 100, '0.00%');
+      addConfigRow(12, 'Garantías de Pliego (t_gar %)', inputs.t_gar / 100, '0.00%');
+      addConfigRow(13, 'Sellado de Contrato Provincial (t_sel %)', inputs.t_sel / 100, '0.00%');
+      addConfigRow(14, 'Aportes Profesionales de Ley (t_apo %)', inputs.t_apo / 100, '0.00%');
+      addConfigRow(15, 'Imprevistos de Campo y Suelo (t_imp %)', inputs.t_imp / 100, '0.00%');
+      addConfigRow(16, 'Gastos Generales de Sede (t_gg %)', inputs.t_gg / 100, '0.00%');
+      addConfigRow(17, 'Costo Financiero Neto s / scoperto (t_fin %)', inputs.t_fin / 100, '0.00%');
+
+      // Borders to Seccion I
+      for (let r = 5; r <= 17; r++) {
+        worksheet.getRow(r).getCell(2).border = { left: { style: 'thin', color: { argb: 'D9D2C5' } } };
+        worksheet.getRow(r).getCell(3).border = { right: { style: 'thin', color: { argb: 'D9D2C5' } } };
+      }
+
+      // Scenario Config Row
+      worksheet.getCell('B18').value = 'Parámetros Específicos de los Escenarios';
+      worksheet.getCell('B18').font = { name: 'Arial', size: 9, bold: true, color: { argb: '3A3732' } };
+      worksheet.getCell('C18').value = 'Mínimo (Agresivo)';
+      worksheet.getCell('D18').value = 'Óptimo (Estándar)';
+      worksheet.getCell('E18').value = 'Máximo (Protegido)';
+
+      styleRowRange(18, 2, 5, {
+        font: { name: 'Arial', size: 9, bold: true, color: { argb: 'FFFFFF' } },
+        fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: '5A716E' } },
+        alignment: { horizontal: 'center', vertical: 'middle' }
+      });
+      worksheet.getRow(18).height = 24;
+
+      // Inflation row
+      worksheet.getCell('B19').value = 'Tasa de Inflación Proyectada';
+      worksheet.getCell('B19').font = { name: 'Arial', size: 9, bold: true, color: { argb: '5A554E' } };
+      worksheet.getCell('C19').value = inputs.inf_min / 100;
+      worksheet.getCell('D19').value = inputs.inf_opt / 100;
+      worksheet.getCell('E19').value = inputs.inf_max / 100;
+
+      // Profit row
+      worksheet.getCell('B20').value = 'Beneficio Empresario Neto Objetivo';
+      worksheet.getCell('B20').font = { name: 'Arial', size: 9, bold: true, color: { argb: '5A554E' } };
+      worksheet.getCell('C20').value = inputs.ben_min / 100;
+      worksheet.getCell('D20').value = inputs.ben_opt / 100;
+      worksheet.getCell('E20').value = inputs.ben_max / 100;
+
+      for (let c = 3; c <= 5; c++) {
+        worksheet.getCell(19, c).numFmt = '0.00%';
+        worksheet.getCell(20, c).numFmt = '0.00%';
+        worksheet.getCell(19, c).font = { name: 'Arial', size: 9, bold: true };
+        worksheet.getCell(20, c).font = { name: 'Arial', size: 9, bold: true };
+        worksheet.getCell(19, c).alignment = { horizontal: 'right' };
+        worksheet.getCell(20, c).alignment = { horizontal: 'right' };
+      }
+
+      // Budget Table Headers
+      worksheet.getCell('B23').value = 'CONCEPTO VIAL DE COSTO / IMPUESTO';
+      worksheet.getCell('C23').value = 'MÍNIMO (AGRESIVO)';
+      worksheet.getCell('D23').value = 'ÓPTIMO (ESTÁNDAR)';
+      worksheet.getCell('E23').value = 'MÁXIMO (PROTEGIDO)';
+
+      styleRowRange(23, 2, 5, {
+        font: { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFF' } },
+        fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: '33322E' } },
+        alignment: { horizontal: 'center', vertical: 'middle' }
+      });
+      worksheet.getRow(23).height = 28;
+
+      // Calculations table matching math logic exactly with live excel formula binders
+      worksheet.getCell('B24').value = '1. COSTO DIRECTO BASE';
+      worksheet.getCell('C24').value = { formula: 'C$6' };
+      worksheet.getCell('D24').value = { formula: 'C$6' };
+      worksheet.getCell('E24').value = { formula: 'C$6' };
+
+      worksheet.getCell('B25').value = '2. COSTO INDIRECTO';
+      worksheet.getCell('C25').value = { formula: 'C24*C$10' };
+      worksheet.getCell('D25').value = { formula: 'D24*C$10' };
+      worksheet.getCell('E25').value = { formula: 'E24*C$10' };
+
+      worksheet.getCell('B26').value = '   3.1 SEGUROS (RC y ART)';
+      worksheet.getCell('C26').value = { formula: 'C24*C$11' };
+      worksheet.getCell('D26').value = { formula: 'D24*C$11' };
+      worksheet.getCell('E26').value = { formula: 'E24*C$11' };
+
+      worksheet.getCell('B27').value = '   3.2 GARANTÍAS DE PLIEGO';
+      worksheet.getCell('C27').value = { formula: 'C24*C$12' };
+      worksheet.getCell('D27').value = { formula: 'D24*C$12' };
+      worksheet.getCell('E27').value = { formula: 'E24*C$12' };
+
+      worksheet.getCell('B28').value = '   3.3 SELLADO DE CONTRATO';
+      worksheet.getCell('C28').value = { formula: 'C24*C$13' };
+      worksheet.getCell('D28').value = { formula: 'D24*C$13' };
+      worksheet.getCell('E28').value = { formula: 'E24*C$13' };
+
+      worksheet.getCell('B29').value = '   3.4 APORTES PROFESIONALES';
+      worksheet.getCell('C29').value = { formula: 'C24*C$14' };
+      worksheet.getCell('D29').value = { formula: 'D24*C$14' };
+      worksheet.getCell('E29').value = { formula: 'E24*C$14' };
+
+      worksheet.getCell('B30').value = '4. IMPREVISTOS DE CAMPO';
+      worksheet.getCell('C30').value = { formula: '(C24+C25)*C$15' };
+      worksheet.getCell('D30').value = { formula: '(D24+D25)*C$15' };
+      worksheet.getCell('E30').value = { formula: '(E24+E25)*C$15' };
+
+      worksheet.getCell('B31').value = '5. SUBTOTAL COSTOS OPERATIVOS';
+      worksheet.getCell('C31').value = { formula: 'SUM(C24:C30)' };
+      worksheet.getCell('D31').value = { formula: 'SUM(D24:D30)' };
+      worksheet.getCell('E31').value = { formula: 'SUM(E24:E30)' };
+
+      worksheet.getCell('B32').value = '6. INFLACIÓN / RIESGO PAÍS ASUMIDO';
+      worksheet.getCell('C32').value = { formula: 'C31*C$19' };
+      worksheet.getCell('D32').value = { formula: 'D31*D$19' };
+      worksheet.getCell('E32').value = { formula: 'E31*E$19' };
+
+      worksheet.getCell('B33').value = '7. GASTOS GENERALES EMPRESA';
+      worksheet.getCell('C33').value = { formula: '(C31+C32)*C$16' };
+      worksheet.getCell('D33').value = { formula: '(D31+D32)*C$16' };
+      worksheet.getCell('E33').value = { formula: '(E31+E32)*C$16' };
+
+      worksheet.getCell('B34').value = '8. COSTO TOTAL DE LA OBRA';
+      worksheet.getCell('C34').value = { formula: 'C31+C32+C33' };
+      worksheet.getCell('D34').value = { formula: 'D31+D32+D33' };
+      worksheet.getCell('E34').value = { formula: 'E31+E32+E33' };
+
+      worksheet.getCell('B35').value = '10. COSTO FINANCIERO (Neto s / Descubierto)';
+      worksheet.getCell('C35').value = { formula: 'MAX(0, C34-C$9)*C$17' };
+      worksheet.getCell('D35').value = { formula: 'MAX(0, D34-C$9)*C$17' };
+      worksheet.getCell('E35').value = { formula: 'MAX(0, E34-C$9)*C$17' };
+
+      worksheet.getCell('B36').value = '11. SUBTOTAL ANTES DE BENEFICIO';
+      worksheet.getCell('C36').value = { formula: 'C34+C35' };
+      worksheet.getCell('D36').value = { formula: 'D34+D35' };
+      worksheet.getCell('E36').value = { formula: 'E34+E35' };
+
+      worksheet.getCell('B37').value = '12. BENEFICIO NETO REQUERIDO';
+      worksheet.getCell('C37').value = { formula: 'C36*C$20' };
+      worksheet.getCell('D37').value = { formula: 'D36*D$20' };
+      worksheet.getCell('E37').value = { formula: 'E36*E$20' };
+
+      worksheet.getCell('B38').value = '13. PRECIO ANTES DE IMPUESTOS';
+      worksheet.getCell('C38').value = { formula: 'C36+C37' };
+      worksheet.getCell('D38').value = { formula: 'D36+D37' };
+      worksheet.getCell('E38').value = { formula: 'E36+E37' };
+
+      worksheet.getCell('B39').value = '14. INGRESOS BRUTOS (3.5% Santa Fe)';
+      worksheet.getCell('C39').value = { formula: 'C38*0.035' };
+      worksheet.getCell('D39').value = { formula: 'D38*0.035' };
+      worksheet.getCell('E39').value = { formula: 'E38*0.035' };
+
+      worksheet.getCell('B40').value = '15. IMPUESTO AL CHEQUE (Créd./Déb.)';
+      worksheet.getCell('C40').value = { formula: '0.006*(C34+C38*0.041)' };
+      worksheet.getCell('D40').value = { formula: '0.006*(D34+D38*0.041)' };
+      worksheet.getCell('E40').value = { formula: '0.006*(E34+E38*0.041)' };
+
+      worksheet.getCell('B41').value = '18. PRECIO DE VENTA (Neto de IVA)';
+      worksheet.getCell('C41').value = { formula: 'C38+C39+C40' };
+      worksheet.getCell('D41').value = { formula: 'D38+D39+D40' };
+      worksheet.getCell('E41').value = { formula: 'E38+E39+E40' };
+
+      worksheet.getCell('B42').value = '19. I.V.A. (21.0%)';
+      worksheet.getCell('C42').value = { formula: 'C38*0.21' };
+      worksheet.getCell('D42').value = { formula: 'D38*0.21' };
+      worksheet.getCell('E42').value = { formula: 'E38*0.21' };
+
+      worksheet.getCell('B43').value = '20. PRECIO DE VENTA TOTAL DE OFERTA';
+      worksheet.getCell('C43').value = { formula: 'C41+C42' };
+      worksheet.getCell('D43').value = { formula: 'D41+D42' };
+      worksheet.getCell('E43').value = { formula: 'E41+E42' };
+
+      const normalFont = { name: 'Arial', size: 9 };
+      const indentFont = { name: 'Arial', size: 9, color: { argb: '7A746B' } };
+      const subtotalFont = { name: 'Arial', size: 9, bold: true, color: { argb: '2D2A26' } };
+      const totalFont = { name: 'Arial', size: 9, bold: true, color: { argb: 'FFFFFF' } };
+
+      const subtotalFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F9F8F6' } };
+      const borderCell = {
+        top: { style: 'thin' as const, color: { argb: 'D9D2C5' } },
+        bottom: { style: 'thin' as const, color: { argb: 'D9D2C5' } }
+      };
+
+      const codeIndex: Record<number, string> = {
+        24: 'normal', 25: 'normal', 26: 'indent', 27: 'indent', 28: 'indent', 29: 'indent',
+        30: 'normal', 31: 'subtotal', 32: 'normal', 33: 'normal', 34: 'subtotal', 35: 'normal',
+        36: 'subtotal', 37: 'normal', 38: 'subtotal', 39: 'normal', 40: 'normal', 41: 'subtotal',
+        42: 'normal', 43: 'total'
+      };
+
+      for (let r = 24; r <= 43; r++) {
+        const type = codeIndex[r];
+        const row = worksheet.getRow(r);
+        worksheet.getRow(r).height = 20;
+
+        let fontToUse = normalFont;
+        if (type === 'indent') fontToUse = indentFont;
+        if (type === 'subtotal') fontToUse = subtotalFont;
+        if (type === 'total') fontToUse = totalFont;
+
+        row.getCell(2).font = fontToUse;
+        if (type === 'subtotal') {
+          styleRowRange(r, 2, 5, { fill: subtotalFill, font: subtotalFont, border: borderCell });
+        }
+
+        for (let col = 3; col <= 5; col++) {
+          const cell = row.getCell(col);
+          cell.numFmt = '"$"#,##0.00';
+          cell.font = fontToUse;
+          cell.alignment = { horizontal: 'right', vertical: 'middle' };
+        }
+
+        if (type === 'total') {
+          styleRowRange(r, 2, 5, {
+            fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: '5A716E' } },
+            font: { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFF' } },
+            border: {
+              top: { style: 'medium' as const, color: { argb: '2D2A26' } },
+              bottom: { style: 'double' as const, color: { argb: '2D2A26' } }
+            }
+          });
+        }
+      }
+
+      // Row 45: Factor K Final Row
+      worksheet.getRow(45).height = 32;
+      worksheet.getCell('B45').value = 'FACTOR MULTIPLICADOR K (Polinómico final)';
+      worksheet.getCell('B45').font = { name: 'Arial', size: 10, bold: true, color: { argb: '3A3732' } };
+      worksheet.getCell('B45').alignment = { horizontal: 'left', vertical: 'middle' };
+
+      worksheet.getCell('C45').value = { formula: 'C43/C24' };
+      worksheet.getCell('D45').value = { formula: 'D43/D24' };
+      worksheet.getCell('E45').value = { formula: 'E43/E24' };
+
+      worksheet.getCell('C45').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'EFEFE0' } };
+      worksheet.getCell('C45').font = { name: 'Arial', size: 11, bold: true, color: { argb: '71715A' } };
+      worksheet.getCell('D45').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'E0EFEF' } };
+      worksheet.getCell('D45').font = { name: 'Arial', size: 11, bold: true, color: { argb: '5A716E' } };
+      worksheet.getCell('E45').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'EFE0E0' } };
+      worksheet.getCell('E45').font = { name: 'Arial', size: 11, bold: true, color: { argb: '8C6A5A' } };
+
+      for (let col = 3; col <= 5; col++) {
+        const cell = worksheet.getCell(45, col);
+        cell.numFmt = '0.0000';
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        cell.border = {
+          top: { style: 'thin' as const, color: { argb: '2D2A26' } },
+          bottom: { style: 'medium' as const, color: { argb: '2D2A26' } }
+        };
+      }
+
+      // Generate buffer and trigger client-side download
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `analisis_polinomico_vial_santa_fe_${new Date().getFullYear()}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      setExportSuccess(true);
+      setTimeout(() => setExportSuccess(false), 3000);
+    } catch (error) {
+      console.error("Error creating Excel file:", error);
+    }
+  };
+
   // Data for Recharts Bar Chart
   const barChartData = useMemo(() => {
     return [
@@ -378,15 +724,20 @@ export default function App() {
                 <RefreshCw className="h-3.5 w-3.5" />
                 Valores Base
               </button>
-              <div className="relative">
-                <button
-                  onClick={handleExportCSV}
-                  className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-wider text-white bg-[#5A716E] hover:bg-[#485B58] rounded-lg transition-all shadow-sm cursor-pointer"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  Exportar CSV
-                </button>
-              </div>
+              <button
+                onClick={handleExportExcel}
+                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-wider text-white bg-[#71715A] hover:bg-[#5E5E4A] rounded-lg transition-all shadow-sm cursor-pointer"
+              >
+                <FileSpreadsheet className="h-3.5 w-3.5" />
+                Planilla Excel (.xlsx)
+              </button>
+              <button
+                onClick={handleExportCSV}
+                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-[#5A554E] hover:text-[#2D2A26] bg-[#EBE7DF] hover:bg-[#D9D2C5] border border-[#D9D2C5] rounded-lg transition-all cursor-pointer"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Exportar CSV
+              </button>
             </div>
           </div>
         </div>
@@ -1420,7 +1771,15 @@ export default function App() {
                   <p className="text-xs text-[#7A746B]">Descarga la estructura completa de precios y simuladores directamente para los pliegos oficiales.</p>
                 </div>
               </div>
-              <div className="flex gap-2 w-full sm:w-auto">
+              <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={handleExportExcel}
+                  className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-[#71715A] hover:bg-[#5E5E4A] text-white rounded-xl text-xs font-bold hover:shadow-md transition-all cursor-pointer"
+                >
+                  <FileSpreadsheet className="h-4 w-4" />
+                  Descargar Excel (.xlsx)
+                </button>
                 <button
                   type="button"
                   onClick={handleExportJSON}
