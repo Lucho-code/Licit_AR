@@ -20,7 +20,11 @@ import {
   ChevronRight,
   Database,
   CheckCircle,
-  AlertCircle
+  AlertCircle,
+  Upload,
+  FileUp,
+  Sparkles,
+  Brain
 } from 'lucide-react';
 import {
   BarChart as ReBarChart,
@@ -52,6 +56,151 @@ export default function App() {
   const [inspectedRow, setInspectedRow] = useState<RowMeta | null>(FILAS_ESTRUCTURA[19]); // Defecto en el total
   const [activeTab, setActiveTab] = useState<'table' | 'charts' | 'formulas'>('table');
   const [exportSuccess, setExportSuccess] = useState(false);
+
+  // States for AI Document Analysis
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [analysisResult, setAnalysisResult] = useState<{
+    estimatedTitle: string;
+    estimatedLocation: string;
+    explanation: string;
+  } | null>(null);
+  const [uploadedFile, setUploadedFile] = useState<{ name: string; type: string; base64: string } | null>(null);
+  const [userPrompt, setUserPrompt] = useState('');
+  const [dragOver, setDragOver] = useState(false);
+  const [loadingStep, setLoadingStep] = useState(0);
+
+  // Dynamic loading messages to show during AI document ingestion
+  const loadingSteps = [
+    "Subiendo documentación técnica de obra...",
+    "Gemini analizando el presupuesto y pliego contractual...",
+    "Correlacionando coeficientes bajo la Ley de Obras de Santa Fe...",
+    "Verificando consistencia del índice polinómico K..."
+  ];
+
+  // Effect to rotate loading steps during analysis
+  React.useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (analyzing) {
+      setLoadingStep(0);
+      interval = setInterval(() => {
+        setLoadingStep(prev => (prev + 1) % loadingSteps.length);
+      }, 4000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [analyzing]);
+
+  // Handle Drag & Drop events
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(true);
+  };
+
+  const handleDragLeave = () => {
+    setDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+
+    processSelectedFile(file);
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    processSelectedFile(file);
+  };
+
+  const processSelectedFile = (file: File) => {
+    setAnalysisError(null);
+    setAnalysisResult(null);
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = reader.result as string;
+      setUploadedFile({
+        name: file.name,
+        type: file.type || "application/octet-stream",
+        base64: base64
+      });
+    };
+    reader.onerror = () => {
+      setAnalysisError("Error al leer el archivo en el navegador.");
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Submit file and prompt to backend API
+  const handleAnalyzePliego = async () => {
+    if (!uploadedFile) {
+      setAnalysisError("Debe seleccionar o arrastrar un pliego o documento de cómputo primero.");
+      return;
+    }
+
+    setAnalyzing(true);
+    setAnalysisError(null);
+
+    try {
+      const response = await fetch("/api/analyze-pliego", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          fileName: uploadedFile.name,
+          fileType: uploadedFile.type,
+          fileData: uploadedFile.base64,
+          userPrompt: userPrompt,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || "Ocurrió un error inesperado al analizar el pliego.");
+      }
+
+      // Update simulation parameters with extracted values
+      setInputs({
+        base_cd: data.base_cd,
+        base_cant_ant: data.base_cant_ant,
+        base_p_h30: data.base_p_h30,
+        t_ci: data.t_ci,
+        t_seg: data.t_seg,
+        t_gg: data.t_gg,
+        t_imp: data.t_imp,
+        t_fin: data.t_fin,
+        // Preserve standard public non-variable parameters
+        t_gar: DEFAULT_INPUTS.t_gar,
+        t_sel: DEFAULT_INPUTS.t_sel,
+        t_apo: DEFAULT_INPUTS.t_apo,
+        inf_min: DEFAULT_INPUTS.inf_min,
+        ben_min: DEFAULT_INPUTS.ben_min,
+        inf_opt: DEFAULT_INPUTS.inf_opt,
+        ben_opt: DEFAULT_INPUTS.ben_opt,
+        inf_max: DEFAULT_INPUTS.inf_max,
+        ben_max: DEFAULT_INPUTS.ben_max,
+      });
+
+      setAnalysisResult({
+        estimatedTitle: data.estimatedTitle,
+        estimatedLocation: data.estimatedLocation,
+        explanation: data.explanation,
+      });
+    } catch (err: any) {
+      console.error(err);
+      setAnalysisError(err.message || "Error al conectar con el servidor de análisis IA.");
+    } finally {
+      setAnalyzing(false);
+    }
+  };
 
   // Calcs
   const results = useMemo(() => {
@@ -288,6 +437,215 @@ export default function App() {
                 </div>
               </button>
             ))}
+          </div>
+        </section>
+
+        {/* AI INGESTION & DOCUMENT AUDITING CONTAINER */}
+        <section className="mb-8 bg-white rounded-2xl border border-[#D9D2C5] shadow-xs overflow-hidden">
+          <div className="bg-[#5A716E] text-white p-4 sm:px-6 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="p-1.5 bg-[#485B58] rounded-lg">
+                <Sparkles className="h-5 w-5 text-[#C7BDB3]" />
+              </div>
+              <div>
+                <h2 className="text-sm font-bold tracking-wider uppercase">
+                  Auditoría Inteligente de Pliegos e Impuestos (IA Gemini)
+                </h2>
+                <p className="text-[#C7BDB3] text-xs">
+                  Carga pliegos de bases o planillas de cómputos viales para calcular automáticamente los parámetros y el coeficiente K óptimo.
+                </p>
+              </div>
+            </div>
+            {analysisResult && (
+              <button
+                type="button"
+                onClick={() => {
+                  setAnalysisResult(null);
+                  setUploadedFile(null);
+                  setUserPrompt('');
+                }}
+                className="text-xs border border-[#C7BDB3] hover:bg-white hover:text-[#5A716E] px-3 py-1 rounded-lg transition-all cursor-pointer"
+              >
+                Limpiar Análisis
+              </button>
+            )}
+          </div>
+
+          <div className="p-6 space-y-6">
+            {!analysisResult && (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* File Drop & Zone */}
+                <div className="lg:col-span-7 space-y-4">
+                  <div
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    className={`border-2 border-dashed rounded-xl p-8 text-center flex flex-col items-center justify-center transition-all ${
+                      dragOver
+                        ? "border-[#5A716E] bg-[#F5F2ED]"
+                        : "border-[#D9D2C5] hover:border-[#5A716E] bg-[#FAFAFA]"
+                    }`}
+                  >
+                    <div className="p-3 bg-[#EBE7DF] rounded-full text-[#5A716E] mb-3">
+                      <FileUp className="h-8 w-8" />
+                    </div>
+                    <p className="text-sm font-semibold text-[#2D2A26] mb-1">
+                      {uploadedFile ? `Archivo cargado: ${uploadedFile.name}` : "Arrastre su pliego de licitación aquí"}
+                    </p>
+                    <p className="text-xs text-[#7A746B] mb-4">
+                      Soporta PDFs, textos, cómputos (.pdf, .txt, .docx, .csv, .json)
+                    </p>
+
+                    <div className="relative inline-block">
+                      <label
+                        htmlFor="file-upload-input"
+                        className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-[#5A554E] hover:text-[#2D2A26] bg-[#EBE7DF] hover:bg-[#D9D2C5] border border-[#D9D2C5] rounded-lg transition-all cursor-pointer"
+                      >
+                        <Upload className="h-3.5 w-3.5" />
+                        {uploadedFile ? "Cambiar Archivo" : "Seleccionar Archivo"}
+                      </label>
+                      <input
+                        id="file-upload-input"
+                        type="file"
+                        accept=".pdf,.txt,.docx,.csv,.json"
+                        onChange={handleFileChange}
+                        className="hidden"
+                        disabled={analyzing}
+                      />
+                    </div>
+                  </div>
+
+                  {analysisError && (
+                    <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs flex items-center gap-2">
+                      <AlertCircle className="h-4 w-4 text-red-500 flex-shrink-0" />
+                      <span>{analysisError}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Instructions Input */}
+                <div className="lg:col-span-5 flex flex-col justify-between space-y-4">
+                  <div className="space-y-2">
+                    <label htmlFor="user-prompt-instructions" className="block text-xs font-bold text-[#5A554E] uppercase tracking-wider">
+                      Instrucciones sobre la Obra o Ruta (Opcional)
+                    </label>
+                    <textarea
+                      id="user-prompt-instructions"
+                      rows={3}
+                      value={userPrompt}
+                      onChange={(e) => setUserPrompt(e.target.value)}
+                      placeholder="Ej: Estimá para una repavimentación urbana en el municipio de San Lorenzo, reduciendo el margen de imprevistos."
+                      className="w-full p-2.5 text-xs bg-[#FAFAFA] border border-[#D9D2C5] rounded-xl focus:border-[#5A716E] focus:ring-1 focus:ring-[#5A716E] outline-none transition-all placeholder:text-[#A4947E]/70 resize-none"
+                      disabled={analyzing}
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleAnalyzePliego}
+                    disabled={analyzing || !uploadedFile}
+                    className={`w-full inline-flex items-center justify-center gap-2 p-3.5 rounded-xl text-xs font-bold uppercase tracking-widest text-white transition-all shadow-xs cursor-pointer ${
+                      analyzing
+                        ? "bg-[#7A746B] cursor-not-allowed"
+                        : !uploadedFile
+                        ? "bg-[#A4947E] opacity-60 cursor-not-allowed"
+                        : "bg-[#5A716E] hover:bg-[#485B58]"
+                    }`}
+                  >
+                    {analyzing ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                        <span>Analizando...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Brain className="h-4 w-4" />
+                        <span>Evaluar Costos Estimados con IA</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Loading stage */}
+            {analyzing && (
+              <div className="p-6 bg-[#F5F2ED] rounded-xl flex flex-col items-center justify-center text-center space-y-4 border border-[#D9D2C5]">
+                <RefreshCw className="h-10 w-10 text-[#5A716E] animate-spin" />
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold text-[#2D2A26] animate-pulse">
+                    {loadingSteps[loadingStep]}
+                  </p>
+                  <p className="text-[#7A746B] text-xs">
+                    Estamos utilizando la inteligencia artificial de Gemini para extraer especificaciones clave y recalcular los costos de obra.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Success Result Panel */}
+            {analysisResult && (
+              <motion.div
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-[#FAFAFA] border border-emerald-100 rounded-xl overflow-hidden"
+              >
+                <div className="bg-emerald-50 border-b border-emerald-100 px-5 py-4 flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <CheckCircle className="h-5 w-5 text-emerald-600 flex-shrink-0" />
+                    <div>
+                      <span className="text-xs font-bold uppercase tracking-wider text-emerald-800">
+                        ¡Auditoría de Pliego Procesada Exitosamente!
+                      </span>
+                      <h3 className="text-sm font-bold text-gray-900">
+                        {analysisResult.estimatedTitle} — {analysisResult.estimatedLocation}
+                      </h3>
+                    </div>
+                  </div>
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
+                    Parámetros Actualizados en la Planilla
+                  </span>
+                </div>
+
+                <div className="p-5 space-y-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pb-4 border-b border-[#D9D2C5]/50">
+                    <div className="bg-white p-3 rounded-xl border border-[#D9D2C5]/70 text-center">
+                      <span className="block text-[10px] font-bold text-[#71715A] uppercase tracking-wider">Costo Directo Base</span>
+                      <strong className="block text-sm text-[#2D2A26] mt-1">{fmtLocal(inputs.base_cd)}</strong>
+                    </div>
+                    <div className="bg-white p-3 rounded-xl border border-[#D9D2C5]/70 text-center">
+                      <span className="block text-[10px] font-bold text-[#71715A] uppercase tracking-wider">Acopio H-30</span>
+                      <strong className="block text-sm text-[#2D2A26] mt-1">{inputs.base_cant_ant} m³</strong>
+                    </div>
+                    <div className="bg-white p-3 rounded-xl border border-[#D9D2C5]/70 text-center">
+                      <span className="block text-[10px] font-bold text-[#71715A] uppercase tracking-wider">Precio m³ H-30</span>
+                      <strong className="block text-sm text-[#2D2A26] mt-1">{fmtLocal(inputs.base_p_h30)}</strong>
+                    </div>
+                    <div className="bg-white p-3 rounded-xl border border-[#D9D2C5]/70 text-center">
+                      <span className="block text-[10px] font-bold text-[#71715A] uppercase tracking-wider">Coeficientes Clave</span>
+                      <strong className="block text-xs text-[#2D2A26] mt-1.5 flex justify-center gap-2">
+                        <span>CI: {inputs.t_ci}%</span>
+                        <span>GG: {inputs.t_gg}%</span>
+                        <span>IMP: {inputs.t_imp}%</span>
+                      </strong>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-bold text-[#3A3732] uppercase tracking-wider">
+                      Informe Técnico de Justificación Financiera
+                    </h4>
+                    <div className="text-xs text-[#5A554E] leading-relaxed p-4 bg-white rounded-xl border border-[#D9D2C5]/70 whitespace-pre-wrap">
+                      {analysisResult.explanation}
+                    </div>
+                  </div>
+
+                  <p className="text-[11px] text-[#A4947E] italic">
+                    * Los valores anteriores han reemplazado automáticamente los controles del simulador. Modifique libremente las márgenes de inflación o los beneficios para continuar ajustando su oferta polinómica.
+                  </p>
+                </div>
+              </motion.div>
+            )}
           </div>
         </section>
 
