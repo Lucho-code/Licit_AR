@@ -221,6 +221,10 @@ export default function App() {
         explanation: data.explanation,
       });
 
+      if (data.plazo_obra && typeof data.plazo_obra === 'number') {
+        setPlazoObra(Math.max(1, Math.round(data.plazo_obra)));
+      }
+
       setLicitacionInfo(
         `${data.estimatedTitle} — ${data.estimatedLocation}\n\nResumen del pliego analizado:\n• Costo Directo base estimado: $${(data.base_cd || 0).toLocaleString('es-AR')}\n• Acopio de H-30 de pliego: ${data.base_cant_ant || 0} m³\n• Análisis de justificación: ${data.explanation}`
       );
@@ -1189,12 +1193,15 @@ export default function App() {
 
   // Memoized Phases specification for the Gantt Diagram
   const phasesData = useMemo(() => {
+    const scale = (pct: number) => {
+      return Math.max(1, Math.min(plazoObra, Math.ceil(plazoObra * pct)));
+    };
     return [
       {
         id: 1,
         name: "Instalación de Obrador, Replanteo e Ingeniería",
         start: 1,
-        end: Math.max(2, Math.ceil(plazoObra * 0.15)),
+        end: scale(0.15),
         progress: gp1,
         setProgress: setGp1,
         costPct: 0.08,
@@ -1206,59 +1213,59 @@ export default function App() {
       {
         id: 2,
         name: "Movimiento de Suelos, Desmonte y Excavaciones",
-        start: Math.max(2, Math.ceil(plazoObra * 0.1)),
-        end: Math.max(3, Math.ceil(plazoObra * 0.45)),
+        start: scale(0.1),
+        end: scale(0.45),
         progress: gp2,
         setProgress: setGp2,
         costPct: 0.18,
         colorClass: "bg-[#A4947E]",
         progressColorClass: "bg-[#8A7965]",
         milestone: "Compactación de la Base Estabilizada",
-        milestoneMonth: Math.max(2, Math.ceil(plazoObra * 0.35)),
+        milestoneMonth: scale(0.35),
       },
       {
         id: 3,
         name: "Obras de Arte, Alcantarillas y Canalización Pluvial",
-        start: Math.max(3, Math.ceil(plazoObra * 0.25)),
-        end: Math.max(4, Math.ceil(plazoObra * 0.6)),
+        start: scale(0.25),
+        end: scale(0.6),
         progress: gp3,
         setProgress: setGp3,
         costPct: 0.12,
         colorClass: "bg-[#8C6A5A]",
         progressColorClass: "bg-[#765445]",
         milestone: "Pruebas Hidráulicas de Sumideros Completas",
-        milestoneMonth: Math.max(3, Math.ceil(plazoObra * 0.5)),
+        milestoneMonth: scale(0.5),
       },
       {
         id: 4,
         name: "Pavimentación Calzada Principal (Hormigón H-30)",
-        start: Math.max(4, Math.ceil(plazoObra * 0.4)),
-        end: Math.max(5, Math.ceil(plazoObra * 0.85)),
+        start: scale(0.4),
+        end: scale(0.85),
         progress: gp4,
         setProgress: setGp4,
         costPct: 0.50, // 50% of direct cost
         colorClass: "bg-[#5A716E]",
         progressColorClass: "bg-[#455755]",
         milestone: "Colocación final del Hormigón H-30 contractual",
-        milestoneMonth: Math.max(4, Math.ceil(plazoObra * 0.75)),
+        milestoneMonth: scale(0.75),
       },
       {
         id: 5,
         name: "Señalización Vertical, Horizontal y Guardarrailes",
-        start: Math.max(5, Math.ceil(plazoObra * 0.8)),
-        end: Math.max(6, Math.ceil(plazoObra * 0.95)),
+        start: scale(0.8),
+        end: scale(0.95),
         progress: gp5,
         setProgress: setGp5,
         costPct: 0.07,
         colorClass: "bg-[#2D2A26]",
         progressColorClass: "bg-[#1C1A18]",
         milestone: "Demarcación Calzada Pintura Reflectiva",
-        milestoneMonth: Math.max(5, Math.ceil(plazoObra * 0.9)),
+        milestoneMonth: scale(0.9),
       },
       {
         id: 6,
         name: "Recepción Provisional, Limpieza y Certificación Final",
-        start: Math.max(6, Math.ceil(plazoObra * 0.9)),
+        start: scale(0.9),
         end: plazoObra,
         progress: gp6,
         setProgress: setGp6,
@@ -2641,8 +2648,8 @@ export default function App() {
                           </div>
                           <input
                             type="range"
-                            min="6"
-                            max="24"
+                            min="1"
+                            max="12"
                             step="1"
                             value={plazoObra}
                             onChange={(e) => setPlazoObra(parseInt(e.target.value))}

@@ -91,6 +91,7 @@ Directivas específicas para montos y coeficientes:
    - t_gg (Gastos Generales de Sede): porcentaje de amortización corporativa de oficinas centrales (un valor de 5.0% a 12.0%).
    - t_imp (Imprevistos de Campo): porcentaje para imprevistos geológicos o demoras (típicamente entre 2.0% y 6.0%).
    - t_fin (Interés o Costo Financiero de scoperto): porcentaje por financiamiento de caja descalzada (generalmente entre 0.5% y 3.0%).
+5. plazo_obra: El plazo total de ejecución de la obra expresado en meses (por ejemplo, 2 meses de obra, 6 de obra, etc.). Si está especificado explícitamente en el pliego o el prompt del usuario (ej: '2 meses de obra'), use ese número exacto. Si no está indicado, estímalo razonablemente según el tamaño de la obra y complejidad vial (típicamente entre 2 y 24 meses).
 
 Construye una justificación excelente ('explanation') explicando técnicamente de qué sección provienen o por qué consideras profesional estimar dichos rangos bajo el contexto vial santafesino de principios de 2026.`,
         responseMimeType: "application/json",
@@ -129,6 +130,10 @@ Construye una justificación excelente ('explanation') explicando técnicamente 
               type: Type.NUMBER,
               description: "Porcentaje de Costo Financiero Neto (% del Costo total deducido del anticipo).",
             },
+            plazo_obra: {
+              type: Type.NUMBER,
+              description: "Plazo total de finalización de obra en meses (por ejemplo, 2, 6, 12, etc.). Debe ser un número entero mayor o igual a 1.",
+            },
             estimatedTitle: {
               type: Type.STRING,
               description: "Título profesional literal o simplificado sugerido para esta simulación vial.",
@@ -151,6 +156,7 @@ Construye una justificación excelente ('explanation') explicando técnicamente 
             "t_gg",
             "t_imp",
             "t_fin",
+            "plazo_obra",
             "estimatedTitle",
             "estimatedLocation",
             "explanation",
