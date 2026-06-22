@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import ExcelJS from 'exceljs';
 import { jsPDF } from 'jspdf';
@@ -118,32 +118,16 @@ export default function App() {
   }, [analyzing]);
 
   // Handle Drag & Drop events
-  const handleDragOver = (e: React.DragEvent) => {
+  const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(true);
-  };
+  }, []);
 
-  const handleDragLeave = () => {
+  const handleDragLeave = useCallback(() => {
     setDragOver(false);
-  };
+  }, []);
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOver(false);
-    const file = e.dataTransfer.files?.[0];
-    if (!file) return;
-
-    processSelectedFile(file);
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    processSelectedFile(file);
-  };
-
-  const processSelectedFile = (file: File) => {
+  const processSelectedFile = useCallback((file: File) => {
     setAnalysisError(null);
     setAnalysisResult(null);
 
@@ -160,7 +144,23 @@ export default function App() {
       setAnalysisError("Error al leer el archivo en el navegador.");
     };
     reader.readAsDataURL(file);
-  };
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+
+    processSelectedFile(file);
+  }, [processSelectedFile]);
+
+  const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    processSelectedFile(file);
+  }, [processSelectedFile]);
 
   // Submit file and prompt to backend API
   const handleAnalyzePliego = async () => {
@@ -268,26 +268,26 @@ export default function App() {
   }, [inputs, inflMaxRange]);
 
   // Handle Input Changes safely
-  const handleInputChange = (key: keyof InputsState, value: string) => {
+  const handleInputChange = useCallback((key: keyof InputsState, value: string) => {
     const numValue = parseFloat(value);
     setInputs(prev => ({
       ...prev,
       [key]: isNaN(numValue) ? 0 : numValue
     }));
-  };
+  }, []);
 
   // Reset to original
-  const resetToDefault = () => {
+  const resetToDefault = useCallback(() => {
     setInputs(DEFAULT_INPUTS);
-  };
+  }, []);
 
   // Load preset
-  const loadPreset = (presetInputs: InputsState) => {
+  const loadPreset = useCallback((presetInputs: InputsState) => {
     setInputs(presetInputs);
-  };
+  }, []);
 
   // Export as CSV
-  const handleExportCSV = () => {
+  const handleExportCSV = useCallback(() => {
     let csvContent = "data:text/csv;charset=utf-8,";
     csvContent += "Concepto Estructural,Escenario Minimo ($),Escenario Optimo ($),Escenario Maximo ($)\n";
     
@@ -311,10 +311,10 @@ export default function App() {
 
     setExportSuccess(true);
     setTimeout(() => setExportSuccess(false), 3000);
-  };
+  }, [results]);
 
   // Export as JSON
-  const handleExportJSON = () => {
+  const handleExportJSON = useCallback(() => {
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({
       inputs,
       results,
@@ -330,7 +330,7 @@ export default function App() {
 
     setExportSuccess(true);
     setTimeout(() => setExportSuccess(false), 3000);
-  };
+  }, [inputs, results]);
 
   // Export as formatted Excel with active functional formulas
   const handleExportExcel = async () => {
@@ -1290,7 +1290,8 @@ export default function App() {
                   id="licitacion-info-textarea"
                   value={licitacionInfo}
                   onChange={(e) => setLicitacionInfo(e.target.value)}
-                  className="w-full min-h-[64px] p-2.5 text-xs sm:text-sm bg-white border border-[#D9D2C5] rounded-xl text-[#3A3732] focus:outline-none focus:ring-2 focus:ring-[#5A716E]/15 focus:border-[#5A716E] leading-relaxed resize-y font-sans transition-all shadow-xs"
+                  style={{ width: '600px', height: '70px', maxWidth: '100%' }}
+                  className="p-2.5 text-xs sm:text-sm bg-white border border-[#D9D2C5] rounded-xl text-[#3A3732] focus:outline-none focus:ring-2 focus:ring-[#5A716E]/15 focus:border-[#5A716E] leading-relaxed resize-y font-sans transition-all shadow-xs"
                   placeholder="Complete aquí los datos de la licitación provincial, expediente o pliego analizado..."
                 />
               </div>
