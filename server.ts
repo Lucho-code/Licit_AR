@@ -7,7 +7,7 @@ import { createServer as createViteServer } from "vite";
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
 // Simple in-memory rate limiter for the AI endpoint (no extra packages needed)
 const _rl = new Map<string, { count: number; reset: number }>();
