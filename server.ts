@@ -9,6 +9,17 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
+// Simple in-memory rate limiter for the AI endpoint (no extra packages needed)
+const _rl = new Map<string, { count: number; reset: number }>();
+function rateLimited(ip: string, maxReq = 10, windowMs = 5 * 60_000): boolean {
+  const now = Date.now();
+  const entry = _rl.get(ip);
+  if (!entry || now > entry.reset) { _rl.set(ip, { count: 1, reset: now + windowMs }); return false; }
+  if (entry.count >= maxReq) return true;
+  entry.count++;
+  return false;
+}
+
 // Set up body parsers with limits for handling base64 uploads
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
@@ -20,6 +31,11 @@ app.get("/api/health", (req, res) => {
 
 // Endpoint to analyze roadwork specification document and extract cost estimates
 app.post("/api/analyze-pliego", async (req, res) => {
+  const clientIp = req.ip ?? req.socket.remoteAddress ?? 'unknown';
+  if (rateLimited(clientIp)) {
+    return res.status(429).json({ error: "Demasiadas solicitudes. Esperá unos minutos antes de volver a analizar." });
+  }
+
   try {
     const { fileName, fileType, fileData, textContent, userPrompt } = req.body;
 

@@ -29,7 +29,8 @@ import {
   Sparkles,
   Brain,
   Calendar,
-  Layers
+  Layers,
+  Share2
 } from 'lucide-react';
 import {
   BarChart as ReBarChart,
@@ -59,7 +60,17 @@ import {
 } from './utils';
 
 export default function App() {
-  const [inputs, setInputs] = useState<InputsState>(DEFAULT_INPUTS);
+  const [inputs, setInputs] = useState<InputsState>(() => {
+    try {
+      if (window.location.hash) {
+        const decoded = JSON.parse(atob(window.location.hash.slice(1)));
+        if (decoded && typeof decoded.base_cd === 'number') {
+          return { ...DEFAULT_INPUTS, ...decoded };
+        }
+      }
+    } catch {}
+    return DEFAULT_INPUTS;
+  });
   const [selectedScenario, setSelectedScenario] = useState<'min' | 'opt' | 'max'>('opt');
   const [searchQuery, setSearchQuery] = useState('');
   const [inspectedRow, setInspectedRow] = useState<RowMeta | null>(FILAS_ESTRUCTURA[19]); // Defecto en el total
@@ -102,6 +113,11 @@ export default function App() {
     "Correlacionando coeficientes bajo la Ley de Obras de Santa Fe...",
     "Verificando consistencia del índice polinómico K..."
   ];
+
+  // Sync Gantt plazoObra with inputs.plazo_obra when it changes
+  React.useEffect(() => {
+    setPlazoObra(inputs.plazo_obra);
+  }, [inputs.plazo_obra]);
 
   // Effect to rotate loading steps during analysis
   React.useEffect(() => {
@@ -272,14 +288,31 @@ export default function App() {
     return list;
   }, [inputs, inflMaxRange]);
 
-  // Handle Input Changes safely
+  // Handle Input Changes with bounds validation
   const handleInputChange = useCallback((key: keyof InputsState, value: string) => {
-    const numValue = parseFloat(value);
-    setInputs(prev => ({
-      ...prev,
-      [key]: isNaN(numValue) ? 0 : numValue
-    }));
+    let numValue = parseFloat(value);
+    if (isNaN(numValue)) numValue = 0;
+    const percentKeys: (keyof InputsState)[] = [
+      't_ci', 't_seg', 't_gar', 't_sel', 't_apo', 't_imp', 't_gg', 't_fin',
+      'inf_min', 'ben_min', 'inf_opt', 'ben_opt', 'inf_max', 'ben_max'
+    ];
+    if (percentKeys.includes(key)) numValue = Math.max(0, Math.min(100, numValue));
+    if (key === 'plazo_obra') numValue = Math.max(1, Math.min(60, Math.round(numValue)));
+    if (key === 'base_cd') numValue = Math.max(1_000_000, numValue);
+    setInputs(prev => ({ ...prev, [key]: numValue }));
   }, []);
+
+  // Encode current inputs to URL hash and copy to clipboard
+  const handleShareURL = useCallback(() => {
+    const encoded = btoa(JSON.stringify(inputs));
+    const url = `${window.location.origin}${window.location.pathname}#${encoded}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setExportSuccess(true);
+      setTimeout(() => setExportSuccess(false), 3000);
+    }).catch(() => {
+      window.location.hash = encoded;
+    });
+  }, [inputs]);
 
   // Reset to original
   const resetToDefault = useCallback(() => {
@@ -1307,6 +1340,14 @@ export default function App() {
             </div>
             <div className="flex flex-wrap items-center gap-3">
               <button
+                onClick={handleShareURL}
+                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-[#5A716E] hover:text-white hover:bg-[#5A716E] bg-white border border-[#5A716E] rounded-lg transition-all cursor-pointer"
+                title="Copiar link con la simulación actual"
+              >
+                <Share2 className="h-3.5 w-3.5" />
+                Compartir Simulación
+              </button>
+              <button
                 onClick={resetToDefault}
                 className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-[#5A554E] hover:text-[#2D2A26] bg-[#EBE7DF] hover:bg-[#D9D2C5] border border-[#D9D2C5] rounded-lg transition-all cursor-pointer"
                 title="Restaurar parámetros por defecto"
@@ -1355,7 +1396,7 @@ export default function App() {
               <div className="flex items-center gap-3">
                 <CheckCircle className="h-5 w-5 text-emerald-600 flex-shrink-0" />
                 <div>
-                  <span className="font-semibold">¡Exportación Exitosa!</span> Descarga efectuada correctamente con el esquema polinómico actualizado en base a los coeficientes ingresados.
+                  <span className="font-semibold">¡Listo!</span> Operación completada — descarga o link copiado al portapapeles con el esquema polinómico actual.
                 </div>
               </div>
               <button onClick={() => setExportSuccess(false)} className="text-emerald-500 hover:text-emerald-700 font-semibold text-xs uppercase px-2 py-1">Descartar</button>
@@ -1810,11 +1851,43 @@ export default function App() {
                         id="t_fin"
                         type="number"
                         step="0.1"
+                        min="0"
+                        max="100"
                         value={inputs.t_fin}
                         onChange={(e) => handleInputChange('t_fin', e.target.value)}
                         className="w-full pl-3 pr-6 py-1.5 bg-white border border-[#D9D2C5] rounded-xl font-mono text-sm focus:outline-none focus:ring-2 focus:ring-[#5A716E]/15 focus:border-[#5A716E] text-[#2D2A26]"
                       />
                       <span className="absolute right-2.5 top-2.5 text-[#7a746b] font-semibold text-xs">%</span>
+                    </div>
+                  </div>
+
+                  <div className="col-span-2 space-y-1">
+                    <label htmlFor="plazo_obra" className="block text-[10px] font-bold text-[#3A3732] uppercase tracking-wide">
+                      Plazo de Obra — afecta el costo financiero mensual
+                    </label>
+                    <div className="flex gap-2 items-center">
+                      <input
+                        type="range"
+                        min="1"
+                        max="60"
+                        step="1"
+                        value={inputs.plazo_obra}
+                        onChange={(e) => handleInputChange('plazo_obra', e.target.value)}
+                        className="flex-1 h-1.5 bg-[#D9D2C5]/50 rounded-lg appearance-none cursor-pointer accent-[#5A716E]"
+                      />
+                      <div className="relative w-20 shrink-0">
+                        <input
+                          id="plazo_obra"
+                          type="number"
+                          step="1"
+                          min="1"
+                          max="60"
+                          value={inputs.plazo_obra}
+                          onChange={(e) => handleInputChange('plazo_obra', e.target.value)}
+                          className="w-full pl-2 pr-8 py-1.5 bg-white border border-[#D9D2C5] rounded-xl font-mono text-sm focus:outline-none focus:ring-2 focus:ring-[#5A716E]/15 focus:border-[#5A716E] text-[#2D2A26] text-center"
+                        />
+                        <span className="absolute right-2 top-2.5 text-[#7a746b] font-semibold text-xs">m</span>
+                      </div>
                     </div>
                   </div>
                 </div>
