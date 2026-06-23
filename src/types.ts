@@ -22,6 +22,7 @@ export interface InputsState {
   inf_max: number;
   ben_max: number;
   factor_contingencia: number;
+  plazo_obra: number;
 }
 
 export interface ScenarioResult {

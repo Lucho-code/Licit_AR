@@ -24,6 +24,7 @@ export const DEFAULT_INPUTS: InputsState = {
   inf_max: 7.0,
   ben_max: 12.0,
   factor_contingencia: 1.0,
+  plazo_obra: 12,
 };
 
 export const PRESETS = [
@@ -87,7 +88,7 @@ export function fmtFactor(v: number): string {
 export function calcEscenario(d: InputsState, inf_tasa: number, ben_tasa: number): ScenarioResult {
   const cd = d.base_cd;
   const anticipo_valor = d.base_cant_ant * d.base_p_h30;
-  const fc = d.factor_contingencia !== undefined ? d.factor_contingencia : 1.0;
+  const fc = d.factor_contingencia;
 
   const ci = cd * (d.t_ci / 100) * fc;
   const seg = cd * (d.t_seg / 100) * fc;
@@ -102,16 +103,18 @@ export function calcEscenario(d: InputsState, inf_tasa: number, ben_tasa: number
   
   const c_total = sub5 + infl + gg;
   
-  // Mitigación del Costo Financiero por la inyección líquida del Anticipo
+  // Mitigación del Costo Financiero por la inyección líquida del Anticipo.
+  // t_fin es una tasa mensual; se multiplica por plazo_obra para obtener el costo total del período.
   const base_financiera = Math.max(0, c_total - anticipo_valor);
-  const fin = base_financiera * (d.t_fin / 100);
+  const fin = base_financiera * (d.t_fin / 100) * d.plazo_obra;
   
   const sub11 = c_total + fin;
   const ben = sub11 * (ben_tasa / 100);
   const sub13 = sub11 + ben;
   
   const iibb = sub13 * 0.035;
-  const cheque = 0.006 * (c_total + (sub13 * 0.041));
+  // Ley 25.413: 0.6% sobre créditos + 0.6% sobre débitos bancarios = 1.2% sobre el precio de venta.
+  const cheque = sub13 * 0.012;
   
   const pv_neto = sub13 + iibb + cheque;
   const iva = sub13 * 0.21;
@@ -241,5 +244,11 @@ export const FILAS_ESTRUCTURA: RowMeta[] = [
     label: '20. PRECIO DE VENTA TOTAL DE OFERTA',
     type: 'total',
     description: 'Importe final de la propuesta que se presentará en el sobre de licitación comercial.'
+  },
+  {
+    key: 'k',
+    label: 'K — COEFICIENTE POLINÓMICO FINAL',
+    type: 'total',
+    description: 'Factor multiplicador K = Precio Total ÷ Costo Directo. Valor oficial a presentar en la fórmula polinómica de redeterminación de precios.'
   }
 ];

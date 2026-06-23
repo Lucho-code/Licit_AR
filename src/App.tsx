@@ -213,6 +213,7 @@ export default function App() {
         inf_max: DEFAULT_INPUTS.inf_max,
         ben_max: DEFAULT_INPUTS.ben_max,
         factor_contingencia: DEFAULT_INPUTS.factor_contingencia,
+        plazo_obra: data.plazo_obra ? Math.max(1, Math.round(data.plazo_obra)) : DEFAULT_INPUTS.plazo_obra,
       });
 
       setAnalysisResult({
@@ -296,9 +297,10 @@ export default function App() {
     csvContent += "Concepto Estructural,Escenario Minimo ($),Escenario Optimo ($),Escenario Maximo ($)\n";
     
     FILAS_ESTRUCTURA.forEach(f => {
-      const valMin = results.min[f.key].toFixed(2);
-      const valOpt = results.opt[f.key].toFixed(2);
-      const valMax = results.max[f.key].toFixed(2);
+      const decimals = f.key === 'k' ? 4 : 2;
+      const valMin = results.min[f.key].toFixed(decimals);
+      const valOpt = results.opt[f.key].toFixed(decimals);
+      const valMax = results.max[f.key].toFixed(decimals);
       csvContent += `"${f.label.replace(/"/g, '""')}",${valMin},${valOpt},${valMax}\n`;
     });
     
@@ -582,9 +584,9 @@ export default function App() {
       worksheet.getCell('E39').value = { formula: 'E38*0.035' };
 
       worksheet.getCell('B40').value = '15. IMPUESTO AL CHEQUE (Créd./Déb.)';
-      worksheet.getCell('C40').value = { formula: '0.006*(C34+C38*0.041)' };
-      worksheet.getCell('D40').value = { formula: '0.006*(D34+D38*0.041)' };
-      worksheet.getCell('E40').value = { formula: '0.006*(E34+E38*0.041)' };
+      worksheet.getCell('C40').value = { formula: 'C38*0.012' };
+      worksheet.getCell('D40').value = { formula: 'D38*0.012' };
+      worksheet.getCell('E40').value = { formula: 'E38*0.012' };
 
       worksheet.getCell('B41').value = '18. PRECIO DE VENTA (Neto de IVA)';
       worksheet.getCell('C41').value = { formula: 'C38+C39+C40' };
@@ -2156,21 +2158,21 @@ export default function App() {
                                 <td className={`py-2 px-3 text-right font-mono ${
                                   isTotal ? 'text-[#71715A] font-bold bg-[#71715A]/10' : 'text-[#2D2A26]'
                                 }`}>
-                                  {fmtLocal(results.min[f.key])}
+                                  {f.key === 'k' ? fmtFactor(results.min[f.key]) : fmtLocal(results.min[f.key])}
                                 </td>
 
                                 {/* Opt val */}
                                 <td className={`py-2 px-3 text-right font-mono ${
                                   isTotal ? 'text-[#5A716E] font-bold bg-[#5A716E]/10' : 'text-[#2D2A26] font-medium'
                                 }`}>
-                                  {fmtLocal(results.opt[f.key])}
+                                  {f.key === 'k' ? fmtFactor(results.opt[f.key]) : fmtLocal(results.opt[f.key])}
                                 </td>
 
                                 {/* Max val */}
                                 <td className={`py-2 px-3 text-right font-mono ${
                                   isTotal ? 'text-[#8C6A5A] font-bold bg-[#8C6A5A]/10' : 'text-[#2D2A26]'
                                 }`}>
-                                  {fmtLocal(results.max[f.key])}
+                                  {f.key === 'k' ? fmtFactor(results.max[f.key]) : fmtLocal(results.max[f.key])}
                                 </td>
                               </tr>
                             );
@@ -2204,11 +2206,17 @@ export default function App() {
                           </div>
                           
                           <div className="bg-white p-3 rounded-lg border border-[#D9D2C5] font-mono text-[11px] self-start md:self-auto shrink-0 shadow-xs">
-                            <span className="text-[#A4947E] block text-[9px] uppercase font-bold mb-1">Peso Promedio en Oferta</span>
-                            <span className="text-[#3A3732] font-semibold">{fmtLocal(results.opt[inspectedRow.key])}</span>
-                            <span className="text-[#5A716E] font-semibold block mt-0.5">
-                              {((results.opt[inspectedRow.key] / results.opt.pv_total) * 100).toFixed(2)} % del final
+                            <span className="text-[#A4947E] block text-[9px] uppercase font-bold mb-1">
+                              {inspectedRow.key === 'k' ? 'Coeficiente Polinómico K' : 'Peso Promedio en Oferta'}
                             </span>
+                            <span className="text-[#3A3732] font-semibold">
+                              {inspectedRow.key === 'k' ? fmtFactor(results.opt[inspectedRow.key]) : fmtLocal(results.opt[inspectedRow.key])}
+                            </span>
+                            {inspectedRow.key !== 'k' && (
+                              <span className="text-[#5A716E] font-semibold block mt-0.5">
+                                {((results.opt[inspectedRow.key] / results.opt.pv_total) * 100).toFixed(2)} % del final
+                              </span>
+                            )}
                           </div>
                         </motion.div>
                       )}

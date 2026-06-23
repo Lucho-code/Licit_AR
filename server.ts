@@ -42,7 +42,8 @@ app.post("/api/analyze-pliego", async (req, res) => {
     });
 
     // We build standard parts depending on whether we received binary data or just text content
-    const contentsParts: any[] = [];
+    type ContentPart = { text: string } | { inlineData: { mimeType: string; data: string } };
+    const contentsParts: ContentPart[] = [];
 
     if (fileData && fileType) {
       // Support file uploads (PDF, text files, photos of specifications)
@@ -75,7 +76,7 @@ app.post("/api/analyze-pliego", async (req, res) => {
     });
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-2.0-flash",
       contents: { parts: contentsParts },
       config: {
         systemInstruction: `Eres un ingeniero civil senior y especialista en análisis financiero contable para empresas constructoras viales en la provincia de Santa Fe, Argentina (febrero de 2026).
