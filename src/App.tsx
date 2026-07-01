@@ -135,6 +135,74 @@ export default function App() {
   const [gp5, setGp5] = useState<number>(0);
   const [gp6, setGp6] = useState<number>(0);
 
+  // Saved simulations manager state
+  const [savedSimulations, setSavedSimulations] = useState<{
+    id: string;
+    name: string;
+    date: string;
+    inputs: InputsState;
+    licitacionInfo: string;
+    plazoObra: number;
+    kFactorOpt: number;
+    ofertaOpt: number;
+  }[]>(() => {
+    try {
+      const saved = localStorage.getItem('vial_saved_simulations');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [newSimName, setNewSimName] = useState('');
+  const [showSimAlert, setShowSimAlert] = useState<string | null>(null);
+
+  // Sync to local storage
+  React.useEffect(() => {
+    try {
+      localStorage.setItem('vial_saved_simulations', JSON.stringify(savedSimulations));
+    } catch (e) {
+      console.error("Error writing to localStorage", e);
+    }
+  }, [savedSimulations]);
+
+  const handleSaveSimulation = useCallback((name: string) => {
+    if (!name.trim()) return;
+    const optResult = calcEscenario(inputs, inputs.inf_opt, inputs.ben_opt);
+    const newSim = {
+      id: Math.random().toString(36).substring(2, 11),
+      name: name.trim(),
+      date: new Date().toLocaleDateString('es-AR', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      }),
+      inputs: { ...inputs },
+      licitacionInfo,
+      plazoObra,
+      kFactorOpt: optResult.k,
+      ofertaOpt: optResult.pv_total,
+    };
+    setSavedSimulations(prev => [newSim, ...prev]);
+    setNewSimName('');
+    setShowSimAlert("¡Simulación guardada con éxito!");
+    setTimeout(() => setShowSimAlert(null), 3500);
+  }, [inputs, licitacionInfo, plazoObra]);
+
+  const handleLoadSimulation = useCallback((sim: any) => {
+    setInputs(sim.inputs);
+    setLicitacionInfo(sim.licitacionInfo);
+    setPlazoObra(sim.plazoObra);
+    setShowSimAlert(`¡Se cargó la simulación "${sim.name}"!`);
+    setTimeout(() => setShowSimAlert(null), 3500);
+  }, []);
+
+  const handleDeleteSimulation = useCallback((id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSavedSimulations(prev => prev.filter(s => s.id !== id));
+  }, []);
+
   // States for sensitivity analysis visualization
   const [inflMaxRange, setInflMaxRange] = useState<number>(25);
   const [sensitivityMetric, setSensitivityMetric] = useState<'pv' | 'k'>('k');
@@ -1525,6 +1593,34 @@ export default function App() {
                     </p>
                   </div>
                 )}
+
+                {/* Viability Status Traffic Light */}
+                <div className="pt-2 border-t border-[#FAF9F6] flex items-center justify-between text-[10px]">
+                  <span className="font-bold uppercase tracking-wider text-[8px] text-[#71715A]">Estado de Viabilidad:</span>
+                  {inputs.ben_opt >= 12 && inputs.inf_opt <= 18 ? (
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold uppercase tracking-wide text-[8px]">
+                      🟢 Excelente / Viable
+                    </span>
+                  ) : inputs.ben_opt >= 6 && inputs.inf_opt <= 35 ? (
+                    <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold uppercase tracking-wide text-[8px]">
+                      🟡 Alerta / Riesgo Medio
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 font-bold uppercase tracking-wide text-[8px] animate-pulse">
+                      🔴 Crítico / Riesgo Alto
+                    </span>
+                  )}
+                </div>
+                <div className="bg-[#F5F2ED]/50 p-2 rounded-xl text-[9px] text-[#7A746B] leading-normal flex flex-col gap-1 font-sans border border-[#EBE7DF]">
+                  <div className="flex justify-between items-center">
+                    <span>Márgen de Equilibrio Mínimo:</span>
+                    <span className="font-bold text-[#3A3732] font-mono">{(inputs.t_gg + 3).toFixed(1)}%</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span>Inflación Máxima Tolerable:</span>
+                    <span className="font-bold text-[#3A3732] font-mono">{((inputs.ben_opt * 1.6) / (1 + (inputs.t_gg / 100))).toFixed(1)}% / mes</span>
+                  </div>
+                </div>
               </div>
 
               {/* Botones de Acción */}
@@ -1609,6 +1705,107 @@ export default function App() {
                 </div>
               </button>
             ))}
+          </div>
+        </section>
+
+        {/* Saved Simulations & Manager Section */}
+        <section className="mb-8 bg-white p-5 rounded-2xl border border-[#D9D2C5] shadow-xs animate-fade-in">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 pb-2 border-b border-[#FAF9F6]">
+            <div>
+              <h2 className="text-xs font-bold tracking-wider text-[#71715A] uppercase flex items-center gap-2">
+                <Layers className="h-4 w-4 text-[#5A716E]" />
+                Historial de Simulaciones Guardadas (Navegador)
+              </h2>
+              <p className="text-[#7A746B] text-[11px] mt-0.5">Guarda la combinación actual de costos y coeficientes para compararlos posteriormente de forma local.</p>
+            </div>
+            {showSimAlert && (
+              <span className="text-xs bg-[#5A716E]/10 text-[#5A716E] font-bold px-3 py-1 rounded-xl border border-[#5A716E]/20 animate-pulse">
+                {showSimAlert}
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Save Current Simulation Panel */}
+            <div className="lg:col-span-4 bg-[#F5F2ED] p-4 rounded-xl border border-[#D9D2C5]/70 flex flex-col justify-between">
+              <div className="space-y-2">
+                <span className="text-[10px] font-bold text-[#71715A] uppercase tracking-wider block">Guardar Estado Actual</span>
+                <p className="text-[11px] text-[#7A746B] leading-relaxed">
+                  Asigna un nombre descriptivo para identificar los parámetros y márgenes vigentes (ej: "Propuesta Vial A", "San Lorenzo Alternativa 2").
+                </p>
+                <div className="pt-2">
+                  <input
+                    type="text"
+                    placeholder="Nombre de la simulación..."
+                    value={newSimName}
+                    onChange={(e) => setNewSimName(e.target.value)}
+                    className="w-full text-[#2D2A26] placeholder-[#A4947E] bg-white border border-[#D9D2C5] rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#5A716E]/15 focus:border-[#5A716E] font-medium"
+                  />
+                </div>
+              </div>
+              <div className="mt-4">
+                <button
+                  type="button"
+                  onClick={() => handleSaveSimulation(newSimName)}
+                  disabled={!newSimName.trim()}
+                  className={`w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider text-white transition-all ${
+                    newSimName.trim()
+                      ? 'bg-[#5A716E] hover:bg-[#485B58] cursor-pointer'
+                      : 'bg-[#A4947E]/60 cursor-not-allowed'
+                  }`}
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Guardar Simulación
+                </button>
+              </div>
+            </div>
+
+            {/* List of Saved Simulations */}
+            <div className="lg:col-span-8 space-y-3">
+              <span className="text-[10px] font-bold text-[#71715A] uppercase tracking-wider block">Mis Versiones Guardadas ({savedSimulations.length})</span>
+              {savedSimulations.length === 0 ? (
+                <div className="border border-dashed border-[#D9D2C5] rounded-xl py-8 px-4 text-center text-[#7A746B] text-xs">
+                  Aún no has guardado ninguna simulación en tu navegador. Completa los datos y guárdalos a la izquierda.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-56 overflow-y-auto pr-1">
+                  {savedSimulations.map((sim) => (
+                    <div
+                      key={sim.id}
+                      onClick={() => handleLoadSimulation(sim)}
+                      className="text-left p-3 rounded-xl border border-[#D9D2C5] hover:border-[#5A716E] bg-white hover:bg-[#F9F8F6]/40 transition-all flex flex-col justify-between cursor-pointer group relative"
+                    >
+                      <div>
+                        <div className="flex justify-between items-start gap-2">
+                          <span className="font-bold text-[#2D2A26] text-xs truncate group-hover:text-[#5A716E] transition-colors max-w-[150px]">{sim.name}</span>
+                          <span className="text-[9px] text-[#A4947E] font-mono shrink-0">{sim.date}</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-1.5 mt-2 bg-[#F5F2ED]/40 p-2 rounded-lg border border-[#F0EDE9] font-mono text-[9px] text-[#7A746B]">
+                          <div>
+                            <span className="block text-[7px] uppercase font-bold text-[#A4947E]">Costo Base</span>
+                            <span className="font-bold text-[#3A3732]">${(sim.inputs.base_cd || 0).toLocaleString('es-AR')}</span>
+                          </div>
+                          <div>
+                            <span className="block text-[7px] uppercase font-bold text-[#A4947E]">Factor K Ópt.</span>
+                            <span className="font-bold text-[#5A716E]">{sim.kFactorOpt ? sim.kFactorOpt.toFixed(4) : 'N/A'}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex justify-between items-center mt-2 pt-2 border-t border-[#FAF9F6]">
+                        <span className="text-[8px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded font-bold font-mono">Oferta: ${(sim.ofertaOpt || 0).toLocaleString('es-AR')}</span>
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteSimulation(sim.id, e)}
+                          className="text-[9px] text-rose-600 hover:text-rose-800 font-bold uppercase transition-colors px-1 py-0.5"
+                        >
+                          Eliminar
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </section>
 

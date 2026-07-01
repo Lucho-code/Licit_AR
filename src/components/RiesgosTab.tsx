@@ -42,6 +42,30 @@ export const RiesgosTab: React.FC<RiesgosTabProps> = React.memo(({
   setInputs
 }) => {
 
+  const [mitigations, setMitigations] = React.useState<Record<string, boolean>>({
+    acopio: false,
+    redet: false,
+    seguro: false,
+    uocra: false
+  });
+
+  const MITIGATION_ITEMS = useMemo(() => [
+    { id: 'acopio', name: 'Acopio Físico Anticipado', desc: 'Sellar contratos físicos con canteras y destilerías YPF en mes cero.', discount: 0.03 },
+    { id: 'redet', name: 'Garantía Legal de Redeterminación', desc: 'Incorporación expresa de cláusulas de actualización automática por Ley Provincial.', discount: 0.04 },
+    { id: 'seguro', name: 'Seguros RC de Cobertura Extendida', desc: 'Amparar daños climáticos y geotécnicos severos con franquicia cero.', discount: 0.02 },
+    { id: 'uocra', name: 'Acuerdo UOCRA Traza Específica', desc: 'Pactar bonos por hito de avance y presentismo con el sindicato de forma anticipada.', discount: 0.03 }
+  ], []);
+
+  const totalDiscount = useMemo(() => {
+    let sum = 0;
+    MITIGATION_ITEMS.forEach(item => {
+      if (mitigations[item.id]) {
+        sum += item.discount;
+      }
+    });
+    return sum;
+  }, [mitigations, MITIGATION_ITEMS]);
+
   const dataList = useMemo(() => {
     const currentRisks = risksState[selectedScenario] || {};
     return RUBROS_RIESGO.map((rubro) => {
@@ -89,6 +113,9 @@ export const RiesgosTab: React.FC<RiesgosTabProps> = React.memo(({
       recCont = 1.02; // 2% minimum fallback factor
     }
 
+    // Apply mitigation discounts
+    recCont = Math.max(1.01, recCont - totalDiscount);
+
     const recFactor = recCont.toFixed(2);
     const mismatch = inputs.factor_contingencia.toFixed(2) !== recFactor;
 
@@ -102,7 +129,7 @@ export const RiesgosTab: React.FC<RiesgosTabProps> = React.memo(({
       displayRecFactor: recFactor,
       isFactorMismatch: mismatch
     };
-  }, [dataList, inputs.factor_contingencia]);
+  }, [dataList, inputs.factor_contingencia, totalDiscount]);
 
   return (
     <div className="space-y-6">
@@ -269,6 +296,57 @@ export const RiesgosTab: React.FC<RiesgosTabProps> = React.memo(({
                   </div>
                 );
               })}
+            </div>
+          </div>
+
+          {/* Mitigation Checklist Panel */}
+          <div className="bg-white p-5 rounded-2xl border border-[#D9D2C5] shadow-xs space-y-4">
+            <div className="border-b border-[#EBE7DF] pb-2 flex justify-between items-center">
+              <h5 className="font-bold text-xs uppercase tracking-wider text-[#71715A] flex items-center gap-1.5">
+                <ShieldAlert className="h-4 w-4 text-emerald-600" />
+                Medidas de Mitigación Contractuales Activas
+              </h5>
+              <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded font-bold font-mono">
+                Descuento: -{(totalDiscount * 100).toFixed(0)}%
+              </span>
+            </div>
+
+            <p className="text-[11px] text-[#7A746B] leading-relaxed">
+              Active medidas contractuales complementarias para mitigar la incertidumbre técnica o financiera de la obra. Cada acción mitiga y reduce directamente el factor de contingencia sugerido.
+            </p>
+
+            <div className="space-y-2.5">
+              {MITIGATION_ITEMS.map((item) => (
+                <label
+                  key={item.id}
+                  className={`flex items-start gap-3 p-3 rounded-xl border transition-all cursor-pointer ${
+                    mitigations[item.id]
+                      ? 'border-emerald-300 bg-emerald-50/20 shadow-xs'
+                      : 'border-[#D9D2C5]/70 hover:border-[#5A716E] bg-[#FAF9F6]/40'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={!!mitigations[item.id]}
+                    onChange={(e) => {
+                      setMitigations(prev => ({
+                        ...prev,
+                        [item.id]: e.target.checked
+                      }));
+                    }}
+                    className="mt-0.5 rounded text-emerald-600 focus:ring-emerald-500 h-3.5 w-3.5 border-[#D9D2C5]"
+                  />
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-bold text-xs text-[#2D2A26]">{item.name}</span>
+                      <span className="text-[9px] font-bold font-mono text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded">
+                        -{(item.discount * 100).toFixed(0)}% K-Contingencia
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-[#7A746B] leading-normal font-sans">{item.desc}</p>
+                  </div>
+                </label>
+              ))}
             </div>
           </div>
         </div>

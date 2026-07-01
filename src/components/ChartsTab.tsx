@@ -415,6 +415,70 @@ export const ChartsTab: React.FC<ChartsTabProps> = React.memo(({
               <span className="font-bold text-[#3A3732] block uppercase tracking-wider mb-0.5">Influencia del Acopio:</span>
               El acopio financiero por anticipo contractual de H-30 disminuye la base de financiamiento neta en obra, lo que a su vez mitiga eficazmente la pendiente de ascenso.
             </div>
+
+            {/* MULTIVARIABLE CROSS-SENSITIVITY MATRIX */}
+            <div className="border-t border-[#D9D2C5]/60 pt-6 mt-6 space-y-4">
+              <div className="bg-[#FAF9F6] p-4 rounded-xl border border-[#D9D2C5] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                <div>
+                  <h4 className="font-bold text-xs text-[#3A3732] uppercase tracking-wider">
+                    Matriz de Sensibilidad Cruzada (Simulador Multivariable)
+                  </h4>
+                  <p className="text-[11px] text-[#7A746B] leading-relaxed font-sans">
+                    Cruza diferentes valores de Inflación Mensual (filas) con Márgenes de Beneficio (columnas) para ver el K y la Oferta resultante en tiempo real.
+                  </p>
+                </div>
+                <span className="text-[10px] text-emerald-800 bg-emerald-50 border border-emerald-100 font-bold px-2 py-0.5 rounded-lg shrink-0">
+                  Cálculo Dinámico
+                </span>
+              </div>
+
+              <div className="overflow-x-auto rounded-xl border border-[#D9D2C5] bg-white">
+                <table className="w-full text-left border-collapse text-[10px] font-sans">
+                  <thead>
+                    <tr className="border-b border-[#D9D2C5] bg-[#EBE7DF]/50 text-[#3A3732] font-bold">
+                      <th className="py-2.5 px-3 text-center border-r border-[#D9D2C5]/50">Inflación \ Beneficio</th>
+                      <th className="py-2.5 px-3 text-center border-r border-[#D9D2C5]/50">5% Beneficio</th>
+                      <th className="py-2.5 px-3 text-center border-r border-[#D9D2C5]/50">10% Beneficio</th>
+                      <th className="py-2.5 px-3 text-center border-r border-[#D9D2C5]/50">15% Beneficio</th>
+                      <th className="py-2.5 px-3 text-center">20% Beneficio</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#F0EDE9] font-mono">
+                    {[5, 15, 25, 35].map((infVal) => {
+                      return (
+                        <tr key={infVal} className="hover:bg-[#F9F8F6] transition-colors">
+                          <td className="py-2.5 px-3 text-center font-bold bg-[#FAF9F6] border-r border-[#D9D2C5]/50 text-[#3A3732]">
+                            {infVal}% / mes
+                          </td>
+                          {[5, 10, 15, 20].map((benVal) => {
+                            const cellRes = calcEscenario(inputs, infVal, benVal);
+                            const isCurrentMatch = Math.abs(inputs.inf_opt - infVal) < 6 && Math.abs(inputs.ben_opt - benVal) < 4;
+                            return (
+                              <td
+                                key={benVal}
+                                className={`py-2.5 px-3 text-center border-r border-[#D9D2C5]/30 last:border-r-0 ${
+                                  isCurrentMatch ? 'bg-emerald-50 font-bold ring-1 ring-[#5A716E]/20 ring-inset' : ''
+                                }`}
+                              >
+                                <div className={`text-[11px] font-bold ${isCurrentMatch ? 'text-emerald-800' : 'text-gray-800'}`}>
+                                  K = {cellRes.k.toFixed(4)}
+                                </div>
+                                <div className="text-[9px] text-[#7A746B] mt-0.5">
+                                  {fmtLocal(cellRes.pv_total)}
+                                </div>
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-[9px] text-[#A4947E] italic text-right">
+                * Las celdas sombreadas en verde indican la región del escenario óptimo actual en base a sus coeficientes de simulación.
+              </p>
+            </div>
           </div>
         </div>
       </div>
