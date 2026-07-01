@@ -29,8 +29,7 @@ import {
   Sparkles,
   Brain,
   Calendar,
-  Layers,
-  Share2
+  Layers
 } from 'lucide-react';
 import {
   BarChart as ReBarChart,
@@ -59,26 +58,73 @@ import {
   FILAS_ESTRUCTURA
 } from './utils';
 
+// Import Modular tab components
+import { TableTab } from './components/TableTab';
+import { ChartsTab } from './components/ChartsTab';
+import { FormulasTab } from './components/FormulasTab';
+import { GanttTab } from './components/GanttTab';
+import { RiesgosTab } from './components/RiesgosTab';
+
 export default function App() {
-  const [inputs, setInputs] = useState<InputsState>(() => {
-    try {
-      if (window.location.hash) {
-        const decoded = JSON.parse(atob(window.location.hash.slice(1)));
-        if (decoded && typeof decoded.base_cd === 'number') {
-          return { ...DEFAULT_INPUTS, ...decoded };
-        }
-      }
-    } catch {}
-    return DEFAULT_INPUTS;
-  });
+  const [inputs, setInputs] = useState<InputsState>(DEFAULT_INPUTS);
   const [selectedScenario, setSelectedScenario] = useState<'min' | 'opt' | 'max'>('opt');
   const [searchQuery, setSearchQuery] = useState('');
   const [inspectedRow, setInspectedRow] = useState<RowMeta | null>(FILAS_ESTRUCTURA[19]); // Defecto en el total
-  const [activeTab, setActiveTab] = useState<'table' | 'charts' | 'formulas' | 'gantt'>('table');
+  const [activeTab, setActiveTab] = useState<'table' | 'charts' | 'formulas' | 'gantt' | 'riesgos'>('table');
   const [exportSuccess, setExportSuccess] = useState(false);
   const [licitacionInfo, setLicitacionInfo] = useState<string>(
     "Licitación Vial Pública 02/2026 — Provincia de Santa Fe, Argentina. Obra: Repavimentación e Infraestructura de Corredores Primarios. Pliego contractual: acopio preventivo de Hormigón H-30."
   );
+
+  // States for Risk Matrix (Probabilidad vs Impacto)
+  const [risksState, setRisksState] = useState<Record<'min' | 'opt' | 'max', Record<string, { probability: number; impact: number }>>>({
+    min: {
+      suelo: { probability: 4, impact: 4 },
+      asfalto: { probability: 5, impact: 5 },
+      movimiento: { probability: 3, impact: 4 },
+      mano_obra: { probability: 4, impact: 3 },
+      logistica: { probability: 4, impact: 3 },
+      tramites: { probability: 5, impact: 4 },
+    },
+    opt: {
+      suelo: { probability: 3, impact: 3 },
+      asfalto: { probability: 3, impact: 4 },
+      movimiento: { probability: 2, impact: 3 },
+      mano_obra: { probability: 3, impact: 3 },
+      logistica: { probability: 2, impact: 3 },
+      tramites: { probability: 3, impact: 3 },
+    },
+    max: {
+      suelo: { probability: 2, impact: 2 },
+      asfalto: { probability: 2, impact: 3 },
+      movimiento: { probability: 1, impact: 2 },
+      mano_obra: { probability: 2, impact: 2 },
+      logistica: { probability: 2, impact: 2 },
+      tramites: { probability: 2, impact: 2 },
+    }
+  });
+
+  const RUBROS_RIESGO = useMemo(() => [
+    { id: 'suelo', name: 'Suelo, Humedad y Subrasantes', desc: 'Riesgos geotécnicos, arcillas expansivas viales o retrasos por exceso de humedad en el corredor.' },
+    { id: 'asfalto', name: 'Suelos, Asfalto y Hormigón H-30', desc: 'Variabilidad abrupta de precios de cemento portland, asfalto y áridos que deforma el presupuesto.' },
+    { id: 'movimiento', name: 'Movimiento de Suelos y Combustible', desc: 'Evolución del precio de Gasoil, cupos internos y repuestos para maquinaria pesada importada.' },
+    { id: 'mano_obra', name: 'Mano de Obra y Paritarias UOCRA', desc: 'Presión de aumentos salariales imprevistos, huelgas o baja productividad local en la traza.' },
+    { id: 'logistica', name: 'Logística, Fletes e Insumos Viales', desc: 'Demoras y sobrecostos por fletes de canteras distantes y logística de distribución en calzada.' },
+    { id: 'tramites', name: 'Certificaciones y Burocracia Provincial', desc: 'Demora en la liquidación de certificados viales estatales de obra pública y cálculo de K.' },
+  ], []);
+
+  const handleUpdateRisk = useCallback((rubroId: string, type: 'probability' | 'impact', val: number) => {
+    setRisksState(prev => ({
+      ...prev,
+      [selectedScenario]: {
+        ...prev[selectedScenario],
+        [rubroId]: {
+          ...prev[selectedScenario][rubroId],
+          [type]: val
+        }
+      }
+    }));
+  }, [selectedScenario]);
   
   // States for interactive Gantt Timeline Chart
   const [plazoObra, setPlazoObra] = useState<number>(12);
@@ -113,11 +159,6 @@ export default function App() {
     "Correlacionando coeficientes bajo la Ley de Obras de Santa Fe...",
     "Verificando consistencia del índice polinómico K..."
   ];
-
-  // Sync Gantt plazoObra with inputs.plazo_obra when it changes
-  React.useEffect(() => {
-    setPlazoObra(inputs.plazo_obra);
-  }, [inputs.plazo_obra]);
 
   // Effect to rotate loading steps during analysis
   React.useEffect(() => {
@@ -229,7 +270,6 @@ export default function App() {
         inf_max: DEFAULT_INPUTS.inf_max,
         ben_max: DEFAULT_INPUTS.ben_max,
         factor_contingencia: DEFAULT_INPUTS.factor_contingencia,
-        plazo_obra: data.plazo_obra ? Math.max(1, Math.round(data.plazo_obra)) : DEFAULT_INPUTS.plazo_obra,
       });
 
       setAnalysisResult({
@@ -262,6 +302,21 @@ export default function App() {
     };
   }, [inputs]);
 
+  const dashboardEjecutivo = useMemo(() => {
+    const kProm = (results.min.k + results.opt.k + results.max.k) / 3;
+    const ofertaProm = (results.min.pv_total + results.opt.pv_total + results.max.pv_total) / 3;
+    const minOferta = results.min.pv_total;
+    const maxOferta = results.max.pv_total;
+    const diffPercent = minOferta > 0 ? ((maxOferta - minOferta) / minOferta) * 100 : 0;
+    const exceedsThreshold = diffPercent > 25;
+    return {
+      kProm,
+      ofertaProm,
+      diffPercent,
+      exceedsThreshold
+    };
+  }, [results]);
+
   const activeResult = useMemo(() => {
     return results[selectedScenario];
   }, [results, selectedScenario]);
@@ -288,31 +343,121 @@ export default function App() {
     return list;
   }, [inputs, inflMaxRange]);
 
-  // Handle Input Changes with bounds validation
+  // Handle Input Changes safely
   const handleInputChange = useCallback((key: keyof InputsState, value: string) => {
-    let numValue = parseFloat(value);
-    if (isNaN(numValue)) numValue = 0;
-    const percentKeys: (keyof InputsState)[] = [
-      't_ci', 't_seg', 't_gar', 't_sel', 't_apo', 't_imp', 't_gg', 't_fin',
-      'inf_min', 'ben_min', 'inf_opt', 'ben_opt', 'inf_max', 'ben_max'
-    ];
-    if (percentKeys.includes(key)) numValue = Math.max(0, Math.min(100, numValue));
-    if (key === 'plazo_obra') numValue = Math.max(1, Math.min(60, Math.round(numValue)));
-    if (key === 'base_cd') numValue = Math.max(1_000_000, numValue);
-    setInputs(prev => ({ ...prev, [key]: numValue }));
+    const numValue = parseFloat(value);
+    setInputs(prev => ({
+      ...prev,
+      [key]: isNaN(numValue) ? 0 : numValue
+    }));
   }, []);
 
-  // Encode current inputs to URL hash and copy to clipboard
-  const handleShareURL = useCallback(() => {
-    const encoded = btoa(JSON.stringify(inputs));
-    const url = `${window.location.origin}${window.location.pathname}#${encoded}`;
-    navigator.clipboard.writeText(url).then(() => {
-      setExportSuccess(true);
-      setTimeout(() => setExportSuccess(false), 3000);
-    }).catch(() => {
-      window.location.hash = encoded;
+  // Validation of scenario inputs
+  const getValidationError = useCallback((key: keyof InputsState, value: number) => {
+    if (value < 0) {
+      return {
+        text: 'No se admiten valores negativos.',
+        level: 'error' as const
+      };
+    }
+    if (key === 'base_cd' && value < 100000 && value > 0) {
+      return {
+        text: 'Costo Directo muy bajo para obras públicas (< $100.000).',
+        level: 'warning' as const
+      };
+    }
+    if (key === 'base_p_h30' && (value < 30000 || value > 600000) && value > 0) {
+      return {
+        text: 'Precio de Hormigón H-30 inusual para mercado 2026.',
+        level: 'warning' as const
+      };
+    }
+    if (key === 't_ci' && value > 50) {
+      return {
+        text: 'Costo indirecto inusualmente elevado (> 50%).',
+        level: 'warning' as const
+      };
+    }
+    if (key === 't_seg' && value > 10) {
+      return {
+        text: 'Seguros inusualmente altos (> 10%).',
+        level: 'warning' as const
+      };
+    }
+    if (key === 't_gg' && value > 30) {
+      return {
+        text: 'Gastos generales de sede inusualmente altos (> 30%).',
+        level: 'warning' as const
+      };
+    }
+    if (key === 't_fin' && value > 15) {
+      return {
+        text: 'Costo financiero desproporcionado (> 15%).',
+        level: 'warning' as const
+      };
+    }
+    if (key.startsWith('inf_') && value > 300) {
+      return {
+        text: 'Inflación mensual proyectada muy alta (> 300%).',
+        level: 'warning' as const
+      };
+    }
+    if (key.startsWith('ben_') && value > 150) {
+      return {
+        text: 'Margen de beneficio/incentivo inusual (> 150%). No competitivo.',
+        level: 'warning' as const
+      };
+    }
+    return null;
+  }, []);
+
+  const getInputClass = useCallback((key: keyof InputsState, baseClass: string) => {
+    const val = inputs[key];
+    const err = getValidationError(key, val);
+    if (!err) return baseClass;
+    if (err.level === 'error') {
+      return `${baseClass} border-red-500 bg-red-50/10 text-red-700 focus:ring-red-500/15 focus:border-red-500`;
+    } else {
+      return `${baseClass} border-amber-500 bg-amber-50/10 text-amber-700 focus:ring-amber-500/15 focus:border-amber-500`;
+    }
+  }, [inputs, getValidationError]);
+
+  const getInputValidationClass = useCallback((key: keyof InputsState) => {
+    const val = inputs[key];
+    const err = getValidationError(key, val);
+    if (!err) {
+      return "w-full bg-white border border-[#D9D2C5] rounded-xl pl-14 pr-4 py-1 text-right text-xs font-mono font-bold text-[#2D2A26] focus:outline-none focus:ring-2 focus:ring-[#5A716E]/15 focus:border-[#5A716E]";
+    }
+    if (err.level === 'error') {
+      return "w-full bg-red-50/50 border border-red-500 rounded-xl pl-14 pr-4 py-1 text-right text-xs font-mono font-bold text-red-700 outline-none ring-2 ring-red-100/70 focus:border-red-600";
+    } else {
+      return "w-full bg-amber-50/50 border border-amber-500 rounded-xl pl-14 pr-4 py-1 text-right text-xs font-mono font-bold text-amber-700 outline-none ring-2 ring-amber-100/70 focus:border-amber-600";
+    }
+  }, [inputs, getValidationError]);
+
+  const hasValidationErrors = useMemo(() => {
+    const keys: (keyof InputsState)[] = Object.keys(DEFAULT_INPUTS) as (keyof InputsState)[];
+    return keys.some(key => {
+      const err = getValidationError(key, inputs[key]);
+      return err && err.level === 'error';
     });
-  }, [inputs]);
+  }, [inputs, getValidationError]);
+
+  const renderValidationMessage = (key: keyof InputsState) => {
+    const val = inputs[key];
+    const err = getValidationError(key, val);
+    if (!err) return null;
+    return (
+      <div 
+        className={`text-[9px] font-medium mt-1 px-1 flex items-start gap-1 leading-normal ${
+          err.level === 'error' ? 'text-red-600 font-bold animate-pulse' : 'text-amber-700'
+        }`}
+      >
+        <span className="flex-shrink-0">⚠️</span>
+        <span>{err.text}</span>
+      </div>
+    );
+  };
 
   // Reset to original
   const resetToDefault = useCallback(() => {
@@ -330,10 +475,9 @@ export default function App() {
     csvContent += "Concepto Estructural,Escenario Minimo ($),Escenario Optimo ($),Escenario Maximo ($)\n";
     
     FILAS_ESTRUCTURA.forEach(f => {
-      const decimals = f.key === 'k' ? 4 : 2;
-      const valMin = results.min[f.key].toFixed(decimals);
-      const valOpt = results.opt[f.key].toFixed(decimals);
-      const valMax = results.max[f.key].toFixed(decimals);
+      const valMin = results.min[f.key].toFixed(2);
+      const valOpt = results.opt[f.key].toFixed(2);
+      const valMax = results.max[f.key].toFixed(2);
       csvContent += `"${f.label.replace(/"/g, '""')}",${valMin},${valOpt},${valMax}\n`;
     });
     
@@ -617,9 +761,9 @@ export default function App() {
       worksheet.getCell('E39').value = { formula: 'E38*0.035' };
 
       worksheet.getCell('B40').value = '15. IMPUESTO AL CHEQUE (Créd./Déb.)';
-      worksheet.getCell('C40').value = { formula: 'C38*0.012' };
-      worksheet.getCell('D40').value = { formula: 'D38*0.012' };
-      worksheet.getCell('E40').value = { formula: 'E38*0.012' };
+      worksheet.getCell('C40').value = { formula: '0.006*(C34+C38*0.041)' };
+      worksheet.getCell('D40').value = { formula: '0.006*(D34+D38*0.041)' };
+      worksheet.getCell('E40').value = { formula: '0.006*(E34+E38*0.041)' };
 
       worksheet.getCell('B41').value = '18. PRECIO DE VENTA (Neto de IVA)';
       worksheet.getCell('C41').value = { formula: 'C38+C39+C40' };
@@ -1323,7 +1467,7 @@ export default function App() {
               <h1 className="text-3xl sm:text-4xl font-bold font-display italic tracking-tight text-[#3A3732] mb-1">
                 Calculadora Vial Multiescenario
               </h1>
-              <div className="space-y-1 w-full max-w-4xl">
+              <div className="space-y-1 w-full">
                 <label htmlFor="licitacion-info-textarea" className="block text-[10px] font-bold uppercase tracking-wider text-[#71715A] flex items-center gap-1.5">
                   <span className="h-1.5 w-1.5 rounded-full bg-[#5A716E]"></span>
                   Información de la Licitación Analizada
@@ -1332,50 +1476,89 @@ export default function App() {
                   id="licitacion-info-textarea"
                   value={licitacionInfo}
                   onChange={(e) => setLicitacionInfo(e.target.value)}
-                  style={{ width: '600px', height: '70px', maxWidth: '100%' }}
-                  className="p-2.5 text-xs sm:text-sm bg-white border border-[#D9D2C5] rounded-xl text-[#3A3732] focus:outline-none focus:ring-2 focus:ring-[#5A716E]/15 focus:border-[#5A716E] leading-relaxed resize-y font-sans transition-all shadow-xs"
+                  style={{ width: '100%', height: '140px' }}
+                  className="w-full p-2.5 text-xs sm:text-sm bg-white border border-[#D9D2C5] rounded-xl text-[#3A3732] focus:outline-none focus:ring-2 focus:ring-[#5A716E]/15 focus:border-[#5A716E] leading-relaxed resize-y font-sans transition-all shadow-xs"
                   placeholder="Complete aquí los datos de la licitación provincial, expediente o pliego analizado..."
                 />
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <button
-                onClick={handleShareURL}
-                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-[#5A716E] hover:text-white hover:bg-[#5A716E] bg-white border border-[#5A716E] rounded-lg transition-all cursor-pointer"
-                title="Copiar link con la simulación actual"
-              >
-                <Share2 className="h-3.5 w-3.5" />
-                Compartir Simulación
-              </button>
-              <button
-                onClick={resetToDefault}
-                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-[#5A554E] hover:text-[#2D2A26] bg-[#EBE7DF] hover:bg-[#D9D2C5] border border-[#D9D2C5] rounded-lg transition-all cursor-pointer"
-                title="Restaurar parámetros por defecto"
-              >
-                <RefreshCw className="h-3.5 w-3.5" />
-                Valores Base
-              </button>
-              <button
-                onClick={handleExportExcel}
-                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-wider text-white bg-[#71715A] hover:bg-[#5E5E4A] rounded-lg transition-all shadow-sm cursor-pointer"
-              >
-                <FileSpreadsheet className="h-3.5 w-3.5" />
-                Planilla Excel (.xlsx)
-              </button>
-              <button
-                onClick={handleExportPDF}
-                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-wider text-white bg-[#5A716E] hover:bg-[#485B58] rounded-lg transition-all shadow-sm cursor-pointer"
-              >
-                <FileText className="h-3.5 w-3.5" />
-                Reporte PDF (.pdf)
-              </button>
-              <button
-                onClick={handleExportCSV}
-                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-[#5A554E] hover:text-[#2D2A26] bg-[#EBE7DF] hover:bg-[#D9D2C5] border border-[#D9D2C5] rounded-lg transition-all cursor-pointer"
-              >
-                <Download className="h-3.5 w-3.5" />
-                Exportar CSV
-              </button>
+            <div className="flex flex-col items-stretch md:items-end gap-3 w-full md:max-w-md shrink-0">
+              {/* Dashboard Ejecutivo */}
+              <div id="executive-dashboard" className="bg-white p-3 rounded-2xl border border-[#D9D2C5] shadow-xs space-y-2 w-full text-xs">
+                <div className="flex items-center justify-between border-b border-[#FAF9F6] pb-1.5">
+                  <span className="font-bold uppercase tracking-wider text-[10px] text-[#71715A] flex items-center gap-1">
+                    <Award className="h-3.5 w-3.5 text-[#5A716E]" />
+                    Dashboard Ejecutivo
+                  </span>
+                  <span className="text-[9px] px-1.5 py-0.2 bg-[#FAF9F6] border border-[#EBE7DF] rounded text-[#727265] font-mono font-bold">
+                    En Tiempo Real
+                  </span>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div className="bg-[#FAF9F6] p-2 rounded-xl border border-[#EBE7DF] space-y-0.5">
+                    <span className="block text-[8px] font-bold text-[#7A746B] uppercase">K Promedio</span>
+                    <span className="font-mono text-xs font-bold text-[#3A3732] block">
+                      {fmtFactor(dashboardEjecutivo.kProm)}
+                    </span>
+                  </div>
+                  <div className="bg-[#FAF9F6] p-2 rounded-xl border border-[#EBE7DF] space-y-0.5">
+                    <span className="block text-[8px] font-bold text-[#7A746B] uppercase">Oferta Promedio</span>
+                    <span className="font-mono text-xs font-bold text-[#3A3732] block text-nowrap overflow-hidden text-ellipsis">
+                      {fmtLocal(dashboardEjecutivo.ofertaProm)}
+                    </span>
+                  </div>
+                </div>
+
+                {dashboardEjecutivo.exceedsThreshold ? (
+                  <div className="p-2 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl flex items-start gap-1.5 text-[10px] animate-pulse">
+                    <span className="flex-shrink-0 text-red-500 font-bold">⚠️</span>
+                    <p className="leading-snug">
+                      <strong>Alerta de Dispersión:</strong> La brecha entre escenario mínimo y máximo supera el 25% ({dashboardEjecutivo.diffPercent.toFixed(1)}%).
+                    </p>
+                  </div>
+                ) : (
+                  <div className="p-2 bg-emerald-50/50 border border-emerald-100 text-emerald-800 rounded-xl flex items-start gap-1.5 text-[10px]">
+                    <span className="flex-shrink-0 text-emerald-600 font-bold">✓</span>
+                    <p className="leading-snug text-[9px] text-[#7A746B]">
+                      Dispersión controlada entre escenarios: {dashboardEjecutivo.diffPercent.toFixed(1)}% (Límite: 25%).
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Botones de Acción */}
+              <div className="flex flex-wrap items-center md:justify-end gap-2.5 w-full">
+                <button
+                  onClick={resetToDefault}
+                  className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-[#5A554E] hover:text-[#2D2A26] bg-[#EBE7DF] hover:bg-[#D9D2C5] border border-[#D9D2C5] rounded-lg transition-all cursor-pointer"
+                  title="Restaurar parámetros por defecto"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  Valores Base
+                </button>
+                <button
+                  onClick={handleExportExcel}
+                  className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-wider text-white bg-[#71715A] hover:bg-[#5E5E4A] rounded-lg transition-all shadow-sm cursor-pointer"
+                >
+                  <FileSpreadsheet className="h-3.5 w-3.5" />
+                  Planilla Excel (.xlsx)
+                </button>
+                <button
+                  onClick={handleExportPDF}
+                  className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-wider text-white bg-[#5A716E] hover:bg-[#485B58] rounded-lg transition-all shadow-sm cursor-pointer"
+                >
+                  <FileText className="h-3.5 w-3.5" />
+                  Reporte PDF (.pdf)
+                </button>
+                <button
+                  onClick={handleExportCSV}
+                  className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-[#5A554E] hover:text-[#2D2A26] bg-[#EBE7DF] hover:bg-[#D9D2C5] border border-[#D9D2C5] rounded-lg transition-all cursor-pointer"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Exportar CSV
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1396,7 +1579,7 @@ export default function App() {
               <div className="flex items-center gap-3">
                 <CheckCircle className="h-5 w-5 text-emerald-600 flex-shrink-0" />
                 <div>
-                  <span className="font-semibold">¡Listo!</span> Operación completada — descarga o link copiado al portapapeles con el esquema polinómico actual.
+                  <span className="font-semibold">¡Exportación Exitosa!</span> Descarga efectuada correctamente con el esquema polinómico actualizado en base a los coeficientes ingresados.
                 </div>
               </div>
               <button onClick={() => setExportSuccess(false)} className="text-emerald-500 hover:text-emerald-700 font-semibold text-xs uppercase px-2 py-1">Descartar</button>
@@ -1664,7 +1847,7 @@ export default function App() {
                   </div>
                   <input
                     type="range"
-                    min="10000000"
+                    min="0"
                     max="200000000"
                     step="500000"
                     value={inputs.base_cd}
@@ -1674,10 +1857,12 @@ export default function App() {
                   <input
                     id="base_cd"
                     type="number"
+                    min="0"
                     value={inputs.base_cd}
                     onChange={(e) => handleInputChange('base_cd', e.target.value)}
-                    className="w-full px-3 py-1.5 text-sm bg-white border border-[#D9D2C5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#5A716E]/15 focus:border-[#5A716E] font-mono font-semibold text-[#2D2A26]"
+                    className={getInputClass('base_cd', "w-full px-3 py-1.5 text-sm bg-white border border-[#D9D2C5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#5A716E]/15 focus:border-[#5A716E] font-mono font-semibold text-[#2D2A26]")}
                   />
+                  {renderValidationMessage('base_cd')}
                 </div>
 
                 {/* Precio H-30 */}
@@ -1700,8 +1885,9 @@ export default function App() {
                     type="number"
                     value={inputs.base_p_h30}
                     onChange={(e) => handleInputChange('base_p_h30', e.target.value)}
-                    className="w-full px-3 py-1.5 text-sm bg-white border border-[#D9D2C5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#5A716E]/15 focus:border-[#5A716E] font-mono font-semibold text-[#2D2A26]"
+                    className={getInputClass('base_p_h30', "w-full px-3 py-1.5 text-sm bg-white border border-[#D9D2C5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#5A716E]/15 focus:border-[#5A716E] font-mono font-semibold text-[#2D2A26]")}
                   />
+                  {renderValidationMessage('base_p_h30')}
                 </div>
 
                 {/* Volumen Anticipo */}
@@ -1725,12 +1911,13 @@ export default function App() {
                       type="number"
                       value={inputs.base_cant_ant}
                       onChange={(e) => handleInputChange('base_cant_ant', e.target.value)}
-                      className="w-full px-3 py-1.5 text-sm bg-white border border-[#D9D2C5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#5A716E]/15 focus:border-[#5A716E] font-mono font-semibold text-[#2D2A26]"
+                      className={getInputClass('base_cant_ant', "w-full px-3 py-1.5 text-sm bg-white border border-[#D9D2C5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#5A716E]/15 focus:border-[#5A716E] font-mono font-semibold text-[#2D2A26]")}
                     />
                     <div className="bg-[#D4CEC5] px-2.5 py-1.5 rounded-xl text-[#3A3732] flex items-center shrink-0 font-medium text-[10px]">
                       Valor de acopio: {fmtLocal(advanceValue)}
                     </div>
                   </div>
+                  {renderValidationMessage('base_cant_ant')}
                 </div>
               </div>
 
@@ -1748,14 +1935,15 @@ export default function App() {
                         step="0.05"
                         value={inputs.t_ci}
                         onChange={(e) => handleInputChange('t_ci', e.target.value)}
-                        className="w-full pl-3 pr-6 py-1.5 bg-white border border-[#D9D2C5] rounded-xl font-mono text-sm focus:outline-none focus:ring-2 focus:ring-[#5A716E]/15 focus:border-[#5A716E] text-[#2D2A26]"
+                        className={getInputClass('t_ci', "w-full pl-3 pr-6 py-1.5 bg-white border border-[#D9D2C5] rounded-xl font-mono text-sm focus:outline-none focus:ring-2 focus:ring-[#5A716E]/15 focus:border-[#5A716E] text-[#2D2A26]")}
                       />
                       <span className="absolute right-2.5 top-2.5 text-[#7a746b] font-semibold text-xs">%</span>
                     </div>
+                    {renderValidationMessage('t_ci')}
                   </div>
 
                   <div className="space-y-1">
-                    <label htmlFor="t_seg" className="block text-[10px] font-bold text-[#3A3732] uppercase tracking-wide">Seguros RC y ART</label>
+                    <label htmlFor="t_seg" className="block text-[10px] font-bold text-[#3A3732] uppercase tracking-wide">Seguros (RC y ART)</label>
                     <div className="relative">
                       <input
                         id="t_seg"
@@ -1763,14 +1951,15 @@ export default function App() {
                         step="0.1"
                         value={inputs.t_seg}
                         onChange={(e) => handleInputChange('t_seg', e.target.value)}
-                        className="w-full pl-3 pr-6 py-1.5 bg-white border border-[#D9D2C5] rounded-xl font-mono text-sm focus:outline-none focus:ring-2 focus:ring-[#5A716E]/15 focus:border-[#5A716E] text-[#2D2A26]"
+                        className={getInputClass('t_seg', "w-full pl-3 pr-6 py-1.5 bg-white border border-[#D9D2C5] rounded-xl font-mono text-sm focus:outline-none focus:ring-2 focus:ring-[#5A716E]/15 focus:border-[#5A716E] text-[#2D2A26]")}
                       />
                       <span className="absolute right-2.5 top-2.5 text-[#7a746b] font-semibold text-xs">%</span>
                     </div>
+                    {renderValidationMessage('t_seg')}
                   </div>
 
                   <div className="space-y-1">
-                    <label htmlFor="t_gar" className="block text-[10px] font-bold text-[#3A3732] uppercase tracking-wide">Garantía de Oferta</label>
+                    <label htmlFor="t_gar" className="block text-[10px] font-bold text-[#3A3732] uppercase tracking-wide">Garantías de Pliego</label>
                     <div className="relative">
                       <input
                         id="t_gar"
@@ -1778,14 +1967,15 @@ export default function App() {
                         step="0.05"
                         value={inputs.t_gar}
                         onChange={(e) => handleInputChange('t_gar', e.target.value)}
-                        className="w-full pl-3 pr-6 py-1.5 bg-white border border-[#D9D2C5] rounded-xl font-mono text-sm focus:outline-none focus:ring-2 focus:ring-[#5A716E]/15 focus:border-[#5A716E] text-[#2D2A26]"
+                        className={getInputClass('t_gar', "w-full pl-3 pr-6 py-1.5 bg-white border border-[#D9D2C5] rounded-xl font-mono text-sm focus:outline-none focus:ring-2 focus:ring-[#5A716E]/15 focus:border-[#5A716E] text-[#2D2A26]")}
                       />
                       <span className="absolute right-2.5 top-2.5 text-[#7a746b] font-semibold text-xs">%</span>
                     </div>
+                    {renderValidationMessage('t_gar')}
                   </div>
 
                   <div className="space-y-1">
-                    <label htmlFor="t_sel" className="block text-[10px] font-bold text-[#3A3732] uppercase tracking-wide">Sellado Provincial</label>
+                    <label htmlFor="t_sel" className="block text-[10px] font-bold text-[#3A3732] uppercase tracking-wide">Sellado de Contrato</label>
                     <div className="relative">
                       <input
                         id="t_sel"
@@ -1793,14 +1983,15 @@ export default function App() {
                         step="0.05"
                         value={inputs.t_sel}
                         onChange={(e) => handleInputChange('t_sel', e.target.value)}
-                        className="w-full pl-3 pr-6 py-1.5 bg-white border border-[#D9D2C5] rounded-xl font-mono text-sm focus:outline-none focus:ring-2 focus:ring-[#5A716E]/15 focus:border-[#5A716E] text-[#2D2A26]"
+                        className={getInputClass('t_sel', "w-full pl-3 pr-6 py-1.5 bg-white border border-[#D9D2C5] rounded-xl font-mono text-sm focus:outline-none focus:ring-2 focus:ring-[#5A716E]/15 focus:border-[#5A716E] text-[#2D2A26]")}
                       />
                       <span className="absolute right-2.5 top-2.5 text-[#7a746b] font-semibold text-xs">%</span>
                     </div>
+                    {renderValidationMessage('t_sel')}
                   </div>
 
                   <div className="space-y-1">
-                    <label htmlFor="t_apo" className="block text-[10px] font-bold text-[#3A3732] uppercase tracking-wide">Aportes Colegios</label>
+                    <label htmlFor="t_apo" className="block text-[10px] font-bold text-[#3A3732] uppercase tracking-wide">Aportes Profesionales</label>
                     <div className="relative">
                       <input
                         id="t_apo"
@@ -1808,14 +1999,15 @@ export default function App() {
                         step="0.1"
                         value={inputs.t_apo}
                         onChange={(e) => handleInputChange('t_apo', e.target.value)}
-                        className="w-full pl-3 pr-6 py-1.5 bg-white border border-[#D9D2C5] rounded-xl font-mono text-sm focus:outline-none focus:ring-2 focus:ring-[#5A716E]/15 focus:border-[#5A716E] text-[#2D2A26]"
+                        className={getInputClass('t_apo', "w-full pl-3 pr-6 py-1.5 bg-white border border-[#D9D2C5] rounded-xl font-mono text-sm focus:outline-none focus:ring-2 focus:ring-[#5A716E]/15 focus:border-[#5A716E] text-[#2D2A26]")}
                       />
                       <span className="absolute right-2.5 top-2.5 text-[#7a746b] font-semibold text-xs">%</span>
                     </div>
+                    {renderValidationMessage('t_apo')}
                   </div>
 
                   <div className="space-y-1">
-                    <label htmlFor="t_imp" className="block text-[10px] font-bold text-[#3A3732] uppercase tracking-wide">Imprevistos Campo</label>
+                    <label htmlFor="t_imp" className="block text-[10px] font-bold text-[#3A3732] uppercase tracking-wide">Imprevistos de Campo</label>
                     <div className="relative">
                       <input
                         id="t_imp"
@@ -1823,10 +2015,11 @@ export default function App() {
                         step="0.1"
                         value={inputs.t_imp}
                         onChange={(e) => handleInputChange('t_imp', e.target.value)}
-                        className="w-full pl-3 pr-6 py-1.5 bg-white border border-[#D9D2C5] rounded-xl font-mono text-sm focus:outline-none focus:ring-2 focus:ring-[#5A716E]/15 focus:border-[#5A716E] text-[#2D2A26]"
+                        className={getInputClass('t_imp', "w-full pl-3 pr-6 py-1.5 bg-white border border-[#D9D2C5] rounded-xl font-mono text-sm focus:outline-none focus:ring-2 focus:ring-[#5A716E]/15 focus:border-[#5A716E] text-[#2D2A26]")}
                       />
                       <span className="absolute right-2.5 top-2.5 text-[#7a746b] font-semibold text-xs">%</span>
                     </div>
+                    {renderValidationMessage('t_imp')}
                   </div>
 
                   <div className="space-y-1">
@@ -1838,10 +2031,11 @@ export default function App() {
                         step="0.5"
                         value={inputs.t_gg}
                         onChange={(e) => handleInputChange('t_gg', e.target.value)}
-                        className="w-full pl-3 pr-6 py-1.5 bg-white border border-[#D9D2C5] rounded-xl font-mono text-sm focus:outline-none focus:ring-2 focus:ring-[#5A716E]/15 focus:border-[#5A716E] text-[#2D2A26]"
+                        className={getInputClass('t_gg', "w-full pl-3 pr-6 py-1.5 bg-white border border-[#D9D2C5] rounded-xl font-mono text-sm focus:outline-none focus:ring-2 focus:ring-[#5A716E]/15 focus:border-[#5A716E] text-[#2D2A26]")}
                       />
                       <span className="absolute right-2.5 top-2.5 text-[#7a746b] font-semibold text-xs">%</span>
                     </div>
+                    {renderValidationMessage('t_gg')}
                   </div>
 
                   <div className="space-y-1">
@@ -1851,44 +2045,13 @@ export default function App() {
                         id="t_fin"
                         type="number"
                         step="0.1"
-                        min="0"
-                        max="100"
                         value={inputs.t_fin}
                         onChange={(e) => handleInputChange('t_fin', e.target.value)}
-                        className="w-full pl-3 pr-6 py-1.5 bg-white border border-[#D9D2C5] rounded-xl font-mono text-sm focus:outline-none focus:ring-2 focus:ring-[#5A716E]/15 focus:border-[#5A716E] text-[#2D2A26]"
+                        className={getInputClass('t_fin', "w-full pl-3 pr-6 py-1.5 bg-white border border-[#D9D2C5] rounded-xl font-mono text-sm focus:outline-none focus:ring-2 focus:ring-[#5A716E]/15 focus:border-[#5A716E] text-[#2D2A26]")}
                       />
                       <span className="absolute right-2.5 top-2.5 text-[#7a746b] font-semibold text-xs">%</span>
                     </div>
-                  </div>
-
-                  <div className="col-span-2 space-y-1">
-                    <label htmlFor="plazo_obra" className="block text-[10px] font-bold text-[#3A3732] uppercase tracking-wide">
-                      Plazo de Obra — afecta el costo financiero mensual
-                    </label>
-                    <div className="flex gap-2 items-center">
-                      <input
-                        type="range"
-                        min="1"
-                        max="60"
-                        step="1"
-                        value={inputs.plazo_obra}
-                        onChange={(e) => handleInputChange('plazo_obra', e.target.value)}
-                        className="flex-1 h-1.5 bg-[#D9D2C5]/50 rounded-lg appearance-none cursor-pointer accent-[#5A716E]"
-                      />
-                      <div className="relative w-20 shrink-0">
-                        <input
-                          id="plazo_obra"
-                          type="number"
-                          step="1"
-                          min="1"
-                          max="60"
-                          value={inputs.plazo_obra}
-                          onChange={(e) => handleInputChange('plazo_obra', e.target.value)}
-                          className="w-full pl-2 pr-8 py-1.5 bg-white border border-[#D9D2C5] rounded-xl font-mono text-sm focus:outline-none focus:ring-2 focus:ring-[#5A716E]/15 focus:border-[#5A716E] text-[#2D2A26] text-center"
-                        />
-                        <span className="absolute right-2 top-2.5 text-[#7a746b] font-semibold text-xs">m</span>
-                      </div>
-                    </div>
+                    {renderValidationMessage('t_fin')}
                   </div>
                 </div>
 
@@ -1909,7 +2072,7 @@ export default function App() {
                   <div className="flex items-center gap-3">
                     <input
                       type="range"
-                      min="0.5"
+                      min="0"
                       max="2.0"
                       step="0.05"
                       value={inputs.factor_contingencia}
@@ -1919,7 +2082,7 @@ export default function App() {
                     <input
                       type="number"
                       step="0.01"
-                      min="0.1"
+                      min="0"
                       max="5.0"
                       value={inputs.factor_contingencia}
                       onChange={(e) => handleInputChange('factor_contingencia', e.target.value)}
@@ -1945,8 +2108,9 @@ export default function App() {
                           type="number"
                           value={inputs.inf_min}
                           onChange={(e) => handleInputChange('inf_min', e.target.value)}
-                          className="w-full bg-white border border-[#D9D2C5] rounded-xl pl-14 pr-4 py-1 text-right text-xs font-mono font-bold text-[#2D2A26] focus:outline-none focus:ring-2 focus:ring-[#5A716E]/15 focus:border-[#5A716E]"
+                          className={getInputValidationClass('inf_min')}
                         />
+                        {renderValidationMessage('inf_min')}
                       </div>
                       <div className="relative">
                         <span className="absolute left-2.5 top-1.5 text-[9px] text-[#7A746B] uppercase font-bold">Incentivo</span>
@@ -1954,8 +2118,9 @@ export default function App() {
                           type="number"
                           value={inputs.ben_min}
                           onChange={(e) => handleInputChange('ben_min', e.target.value)}
-                          className="w-full bg-white border border-[#D9D2C5] rounded-xl pl-14 pr-4 py-1 text-right text-xs font-mono font-bold text-[#2D2A26] focus:outline-none focus:ring-2 focus:ring-[#5A716E]/15 focus:border-[#5A716E]"
+                          className={getInputValidationClass('ben_min')}
                         />
+                        {renderValidationMessage('ben_min')}
                       </div>
                     </div>
                   </div>
@@ -1970,8 +2135,9 @@ export default function App() {
                           type="number"
                           value={inputs.inf_opt}
                           onChange={(e) => handleInputChange('inf_opt', e.target.value)}
-                          className="w-full bg-white border border-[#D9D2C5] rounded-xl pl-14 pr-4 py-1 text-right text-xs font-mono font-bold text-[#2D2A26] focus:outline-none focus:ring-2 focus:ring-[#5A716E]/15 focus:border-[#5A716E]"
+                          className={getInputValidationClass('inf_opt')}
                         />
+                        {renderValidationMessage('inf_opt')}
                       </div>
                       <div className="relative">
                         <span className="absolute left-2.5 top-1.5 text-[9px] text-[#7A746B] uppercase font-bold">Incentivo</span>
@@ -1979,8 +2145,9 @@ export default function App() {
                           type="number"
                           value={inputs.ben_opt}
                           onChange={(e) => handleInputChange('ben_opt', e.target.value)}
-                          className="w-full bg-white border border-[#D9D2C5] rounded-xl pl-14 pr-4 py-1 text-right text-xs font-mono font-bold text-[#2D2A26] focus:outline-none focus:ring-2 focus:ring-[#5A716E]/15 focus:border-[#5A716E]"
+                          className={getInputValidationClass('ben_opt')}
                         />
+                        {renderValidationMessage('ben_opt')}
                       </div>
                     </div>
                   </div>
@@ -1995,8 +2162,9 @@ export default function App() {
                           type="number"
                           value={inputs.inf_max}
                           onChange={(e) => handleInputChange('inf_max', e.target.value)}
-                          className="w-full bg-white border border-[#D9D2C5] rounded-xl pl-14 pr-4 py-1 text-right text-xs font-mono font-bold text-[#2D2A26] focus:outline-none focus:ring-2 focus:ring-[#5A716E]/15 focus:border-[#5A716E]"
+                          className={getInputValidationClass('inf_max')}
                         />
+                        {renderValidationMessage('inf_max')}
                       </div>
                       <div className="relative">
                         <span className="absolute left-2.5 top-1.5 text-[9px] text-[#7A746B] uppercase font-bold">Incentivo</span>
@@ -2004,8 +2172,9 @@ export default function App() {
                           type="number"
                           value={inputs.ben_max}
                           onChange={(e) => handleInputChange('ben_max', e.target.value)}
-                          className="w-full bg-white border border-[#D9D2C5] rounded-xl pl-14 pr-4 py-1 text-right text-xs font-mono font-bold text-[#2D2A26] focus:outline-none focus:ring-2 focus:ring-[#5A716E]/15 focus:border-[#5A716E]"
+                          className={getInputValidationClass('ben_max')}
                         />
+                        {renderValidationMessage('ben_max')}
                       </div>
                     </div>
                   </div>
@@ -2040,6 +2209,22 @@ export default function App() {
 
           {/* RIGHT COLUMN: ANALYTICS, TABLES & CHARTS (7 cols) */}
           <div className="lg:col-span-7 space-y-6">
+
+            {hasValidationErrors && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="p-4 bg-red-50/95 border border-red-300 rounded-2xl flex items-start gap-3 text-red-900 text-xs sm:text-sm shadow-md"
+              >
+                <div className="p-1 bg-red-100 rounded-lg text-red-600 flex-shrink-0 text-base">⚠️</div>
+                <div>
+                  <h4 className="font-bold text-red-800">Valores de Escenario Inválidos</h4>
+                  <p className="mt-0.5 text-red-700 leading-relaxed font-normal">
+                    Se han ingresado porcentajes negativos en los parámetros específicos por escenario en el panel izquierdo. Corrija los valores para normalizar los cálculos polinómicos y restablecer la exactitud de la oferta licitatoria.
+                  </p>
+                </div>
+              </motion.div>
+            )}
 
              {/* TOP DYNAMIC SUMMARY BADGES */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -2120,11 +2305,11 @@ export default function App() {
 
             {/* CENTRAL TABS CONTROL */}
             <div className="bg-white rounded-2xl border border-[#D9D2C5] overflow-hidden shadow-sm">
-              <div className="flex bg-[#EBE7DF] border-b border-[#D9D2C5] p-2 gap-2">
+              <div className="flex flex-wrap sm:flex-nowrap bg-[#EBE7DF] border-b border-[#D9D2C5] p-2 gap-2">
                 <button
                   type="button"
                   onClick={() => setActiveTab('table')}
-                  className={`flex-1 inline-flex items-center justify-center gap-2 py-2 px-3.5 rounded-xl font-bold uppercase tracking-wider text-[10px] transition-all focus:outline-none cursor-pointer ${
+                  className={`flex-1 min-w-[120px] inline-flex items-center justify-center gap-2 py-2 px-3.5 rounded-xl font-bold uppercase tracking-wider text-[10px] transition-all focus:outline-none cursor-pointer ${
                     activeTab === 'table'
                       ? 'bg-white text-[#2D2A26] shadow-xs'
                       : 'text-[#7A746B] hover:text-[#2D2A26]'
@@ -2136,7 +2321,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setActiveTab('charts')}
-                  className={`flex-1 inline-flex items-center justify-center gap-2 py-2 px-3.5 rounded-xl font-bold uppercase tracking-wider text-[10px] transition-all focus:outline-none cursor-pointer ${
+                  className={`flex-1 min-w-[120px] inline-flex items-center justify-center gap-2 py-2 px-3.5 rounded-xl font-bold uppercase tracking-wider text-[10px] transition-all focus:outline-none cursor-pointer ${
                     activeTab === 'charts'
                       ? 'bg-white text-[#2D2A26] shadow-xs'
                       : 'text-[#7A746B] hover:text-[#2D2A26]'
@@ -2148,7 +2333,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setActiveTab('formulas')}
-                  className={`flex-1 inline-flex items-center justify-center gap-2 py-2 px-3.5 rounded-xl font-bold uppercase tracking-wider text-[10px] transition-all focus:outline-none cursor-pointer ${
+                  className={`flex-1 min-w-[120px] inline-flex items-center justify-center gap-2 py-2 px-3.5 rounded-xl font-bold uppercase tracking-wider text-[10px] transition-all focus:outline-none cursor-pointer ${
                     activeTab === 'formulas'
                       ? 'bg-white text-[#2D2A26] shadow-xs'
                       : 'text-[#7A746B] hover:text-[#2D2A26]'
@@ -2160,7 +2345,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setActiveTab('gantt')}
-                  className={`flex-1 inline-flex items-center justify-center gap-2 py-2 px-3.5 rounded-xl font-bold uppercase tracking-wider text-[10px] transition-all focus:outline-none cursor-pointer ${
+                  className={`flex-1 min-w-[120px] inline-flex items-center justify-center gap-2 py-2 px-3.5 rounded-xl font-bold uppercase tracking-wider text-[10px] transition-all focus:outline-none cursor-pointer ${
                     activeTab === 'gantt'
                       ? 'bg-white text-[#2D2A26] shadow-xs'
                       : 'text-[#7A746B] hover:text-[#2D2A26]'
@@ -2169,735 +2354,86 @@ export default function App() {
                   <Calendar className="h-4 w-4 text-[#5A716E]" />
                   Cronograma Gantt
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('riesgos')}
+                  className={`flex-1 min-w-[120px] inline-flex items-center justify-center gap-2 py-2 px-3.5 rounded-xl font-bold uppercase tracking-wider text-[10px] transition-all focus:outline-none cursor-pointer ${
+                    activeTab === 'riesgos'
+                      ? 'bg-white text-[#2D2A26] shadow-xs'
+                      : 'text-[#7A746B] hover:text-[#2D2A26]'
+                  }`}
+                >
+                  <ShieldAlert className="h-4 w-4 text-[#5A716E]" />
+                  Matriz de Riesgo
+                </button>
               </div>
 
               <div className="p-4 sm:p-6">
                 
                 {/* TAB 1: COMPARATIVE STRUCTURE TABLE */}
                 {activeTab === 'table' && (
-                  <div className="space-y-4">
-                    {/* Search & Tooltip Row */}
-                    <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
-                      <div className="relative w-full sm:w-72">
-                        <input
-                          type="text"
-                          placeholder="Buscar concepto o rubro..."
-                          value={searchQuery}
-                          onChange={(e) => setSearchQuery(e.target.value)}
-                          className="w-full text-[#2D2A26] placeholder-[#A4947E] bg-[#F9F8F6] border border-[#D9D2C5] rounded-xl px-4 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#5A716E]/15 focus:border-[#5A716E]"
-                        />
-                      </div>
-                      <div className="text-right text-[11px] text-[#7A746B] flex items-center gap-1">
-                        <Info className="h-3 w-3 text-[#5A716E]" />
-                        Haz clic en un renglón para detallar su fórmula e impacto relativo.
-                      </div>
-                    </div>
-
-                    {/* Highly Crafted Table */}
-                    <div className="overflow-x-auto rounded-xl border border-[#D9D2C5] bg-white">
-                      <table className="w-full text-left border-collapse text-xs">
-                        <thead>
-                          <tr className="border-b border-[#D9D2C5] bg-[#3B3A36] text-[#F5F2ED]">
-                            <th className="py-2.5 px-4 font-semibold text-left">Concepto Estructural</th>
-                            <th className="py-2.5 px-3 text-right font-semibold">Mínimo (Agresivo)</th>
-                            <th className="py-2.5 px-3 text-right font-semibold">Óptimo (Estándar)</th>
-                            <th className="py-2.5 px-3 text-right font-semibold">Máximo (Protegido)</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-[#F0EDE9]">
-                          {filteredRows.map((f) => {
-                            const isSubtotal = f.type === 'subtotal';
-                            const isTotal = f.type === 'total';
-                            const isIndent = f.type === 'indent';
-                            const isInspected = inspectedRow?.key === f.key;
-
-                            let bgClass = "hover:bg-[#F9F8F6]/60 transition-colors";
-                            if (isSubtotal) bgClass = "bg-[#F9F8F6] font-bold text-[#2D2A26]";
-                            if (isTotal) bgClass = "bg-[#F5F2ED] font-extrabold text-[#3A3732] border-y-2 border-[#D9D2C5]";
-                            if (isInspected) bgClass = `${bgClass} ring-1 ring-[#5A716E] bg-[#EBE7DF]/30`;
-
-                            return (
-                              <tr
-                                key={f.key}
-                                onClick={() => setInspectedRow(f)}
-                                className={`cursor-pointer ${bgClass}`}
-                              >
-                                <td className={`py-2 px-4 flex items-center gap-1.5 ${isIndent ? 'pl-8 text-[#7A746B]' : 'font-medium text-[#2D2A26]'}`}>
-                                  {isIndent && <ChevronRight className="h-2.5 w-2.5 text-[#A4947E] flex-shrink-0" />}
-                                  <span>{f.label}</span>
-                                </td>
-                                
-                                {/* Min val */}
-                                <td className={`py-2 px-3 text-right font-mono ${
-                                  isTotal ? 'text-[#71715A] font-bold bg-[#71715A]/10' : 'text-[#2D2A26]'
-                                }`}>
-                                  {f.key === 'k' ? fmtFactor(results.min[f.key]) : fmtLocal(results.min[f.key])}
-                                </td>
-
-                                {/* Opt val */}
-                                <td className={`py-2 px-3 text-right font-mono ${
-                                  isTotal ? 'text-[#5A716E] font-bold bg-[#5A716E]/10' : 'text-[#2D2A26] font-medium'
-                                }`}>
-                                  {f.key === 'k' ? fmtFactor(results.opt[f.key]) : fmtLocal(results.opt[f.key])}
-                                </td>
-
-                                {/* Max val */}
-                                <td className={`py-2 px-3 text-right font-mono ${
-                                  isTotal ? 'text-[#8C6A5A] font-bold bg-[#8C6A5A]/10' : 'text-[#2D2A26]'
-                                }`}>
-                                  {f.key === 'k' ? fmtFactor(results.max[f.key]) : fmtLocal(results.max[f.key])}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                          {filteredRows.length === 0 && (
-                            <tr>
-                              <td colSpan={4} className="py-8 text-center text-[#7A746B]">
-                                <AlertCircle className="h-8 w-8 mx-auto mb-2 text-[#A4947E]" />
-                                No se encontraron rubros estructurales que coincidan con la búsqueda.
-                              </td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-
-                    {/* Inspected Row Details Card */}
-                    <AnimatePresence mode="wait">
-                      {inspectedRow && (
-                        <motion.div
-                          key={inspectedRow.key}
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: -10 }}
-                          className="bg-[#EBE7DF]/75 p-4 rounded-xl border border-[#D9D2C5] flex flex-col md:flex-row md:items-center justify-between gap-4"
-                        >
-                          <div className="space-y-1">
-                            <span className="text-[10px] font-bold text-[#5A716E] uppercase tracking-widest block">Ítem Inspeccionado</span>
-                            <h4 className="font-bold text-[#3A3732] text-sm">{inspectedRow.label}</h4>
-                            <p className="text-xs text-[#7A746B] leading-relaxed max-w-2xl">{inspectedRow.description}</p>
-                          </div>
-                          
-                          <div className="bg-white p-3 rounded-lg border border-[#D9D2C5] font-mono text-[11px] self-start md:self-auto shrink-0 shadow-xs">
-                            <span className="text-[#A4947E] block text-[9px] uppercase font-bold mb-1">
-                              {inspectedRow.key === 'k' ? 'Coeficiente Polinómico K' : 'Peso Promedio en Oferta'}
-                            </span>
-                            <span className="text-[#3A3732] font-semibold">
-                              {inspectedRow.key === 'k' ? fmtFactor(results.opt[inspectedRow.key]) : fmtLocal(results.opt[inspectedRow.key])}
-                            </span>
-                            {inspectedRow.key !== 'k' && (
-                              <span className="text-[#5A716E] font-semibold block mt-0.5">
-                                {((results.opt[inspectedRow.key] / results.opt.pv_total) * 100).toFixed(2)} % del final
-                              </span>
-                            )}
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
+                  <TableTab
+                    inputs={inputs}
+                    results={results}
+                    searchQuery={searchQuery}
+                    setSearchQuery={setSearchQuery}
+                    inspectedRow={inspectedRow}
+                    setInspectedRow={setInspectedRow}
+                  />
                 )}
 
                 {/* TAB 2: RICH DYNAMIC CHARTS */}
                 {activeTab === 'charts' && (
-                  <div className="space-y-8">
-                    
-                    {/* Chart Header Settings */}
-                    <div className="bg-[#F5F2ED] p-4 rounded-2xl border border-[#D9D2C5] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-                      <div>
-                        <span className="font-bold block text-[#3A3732]">Distribución de Recursos</span>
-                        <p className="text-[#7A746B]">Verifica cómo se desglosan los costos y el impacto del beneficio neto en los tres escenarios.</p>
-                      </div>
-                      <div className="flex gap-2">
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-xl text-xs font-bold uppercase tracking-wider bg-white text-[#2D2A26] border border-[#D9D2C5]">
-                          Selección Activa: <strong className="ml-1 uppercase text-[#5A716E]">{selectedScenario}</strong>
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-center">
-                      
-                      {/* Bar comparison (Cross comparison) */}
-                      <div className="md:col-span-7 space-y-4">
-                        <span className="text-xs font-bold text-[#7A746B] uppercase tracking-wide block text-center md:text-left">
-                          Comparativa de Componentes Estructurales ($)
-                        </span>
-                        <div className="h-64 sm:h-80 w-full">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <ReBarChart
-                              data={barChartData}
-                              margin={{ top: 10, right: 10, left: 20, bottom: 5 }}
-                            >
-                              <CartesianGrid strokeDasharray="3 3" opacity={0.15} stroke="#D9D2C5" />
-                              <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#7A746B' }} />
-                              <YAxis tickFormatter={(val) => `$${(val / 1e6).toFixed(0)}M`} tick={{ fontSize: 10, fill: '#7A746B' }} />
-                              <ReTooltip
-                                formatter={(value: any) => [fmtLocal(Number(value)), '']}
-                                cursor={{ fill: '#F5F2ED', opacity: 0.5 }}
-                              />
-                              <Legend wrapperStyle={{ fontSize: '10px' }} />
-                              <Bar dataKey="min" fill="#71715A" name="Mínimo (Agresivo)" radius={[4, 4, 0, 0]} />
-                              <Bar dataKey="opt" fill="#5A716E" name="Óptimo (Estándar)" radius={[4, 4, 0, 0]} />
-                              <Bar dataKey="max" fill="#8C6A5A" name="Máximo (Protegido)" radius={[4, 4, 0, 0]} />
-                            </ReBarChart>
-                          </ResponsiveContainer>
-                        </div>
-                      </div>
-
-                      {/* Donut break down for currently selected scenario */}
-                      <div className="md:col-span-5 space-y-4">
-                        <span className="text-xs font-bold text-[#7A746B] uppercase tracking-wide block text-center">
-                          Desglose del Precio de Venta (Escenario {selectedScenario.toUpperCase()})
-                        </span>
-                        <div className="h-56 sm:h-64 w-full flex justify-center items-center">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <RePieChart>
-                              <Pie
-                                data={donutChartData}
-                                cx="50%"
-                                cy="50%"
-                                innerRadius={50}
-                                outerRadius={80}
-                                paddingAngle={2}
-                                dataKey="value"
-                              >
-                                {donutChartData.map((entry, index) => (
-                                  <Cell key={`cell-${index}`} fill={entry.color} />
-                                ))}
-                              </Pie>
-                              <ReTooltip formatter={(value: any) => [fmtLocal(Number(value)), '']} />
-                            </RePieChart>
-                          </ResponsiveContainer>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2 text-[10px]">
-                          {donutChartData.map((item, idx) => (
-                            <div key={idx} className="flex items-center gap-1.5">
-                              <span className="h-2 w-2 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }} />
-                              <span className="text-[#7A746B] truncate">{item.name}</span>
-                              <span className="font-mono font-bold text-[#3A3732] ml-auto">
-                                {((item.value / activeResult.pv_total) * 100).toFixed(1)}%
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                    </div>
-
-                    {/* NEW SECTION: DETAILED INFLATION SENSITIVITY CURVES */}
-                    <div className="border-t border-[#D9D2C5]/60 pt-8 space-y-6">
-                      
-                      {/* Section Header with Controls */}
-                      <div className="bg-[#F5F2ED] p-5 rounded-2xl border border-[#D9D2C5] flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-                        <div className="space-y-1.5 flex-1">
-                          <h4 className="font-bold text-sm text-[#3A3732] uppercase tracking-wider flex items-center gap-2">
-                            <TrendingUp className="h-4 w-4 text-[#5A716E]" />
-                            Modelado de Sensibilidad y Elasticidad de la Oferta viales
-                          </h4>
-                          <p className="text-xs text-[#7A746B] leading-relaxed max-w-4xl font-sans">
-                            Simula en tiempo real la respuesta matemática del presupuesto vial ante variaciones continuas de la inflación supuesta. Compara la pendiente de incremento del Coeficiente de Reajuste <strong>K</strong> y la oferta de licitación final para los escenarios proyectados.
-                          </p>
-                        </div>
-                        
-                        {/* Interactive Widgets */}
-                        <div className="flex flex-wrap items-center gap-4 shrink-0 sm:flex-nowrap w-full lg:w-auto">
-                          {/* Toggle Metric */}
-                          <div className="bg-white p-1 rounded-xl border border-[#D9D2C5] flex gap-1 w-full sm:w-auto">
-                            <button
-                              type="button"
-                              onClick={() => setSensitivityMetric('k')}
-                              className={`flex-1 sm:flex-initial px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                                sensitivityMetric === 'k'
-                                  ? 'bg-[#5A716E] text-white shadow-xs'
-                                  : 'text-[#7A746B] hover:text-[#2D2A26]'
-                              }`}
-                            >
-                              Factor K
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setSensitivityMetric('pv')}
-                              className={`flex-1 sm:flex-initial px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                                sensitivityMetric === 'pv'
-                                  ? 'bg-[#5A716E] text-white shadow-xs'
-                                  : 'text-[#7A746B] hover:text-[#2D2A26]'
-                              }`}
-                            >
-                              Oferta ($)
-                            </button>
-                          </div>
-
-                          {/* Dynamic Range Slider */}
-                          <div className="bg-white px-3.5 py-1.5 rounded-xl border border-[#D9D2C5] min-w-[200px] w-full sm:w-auto shadow-xs">
-                            <div className="flex justify-between items-center text-[10px] uppercase font-bold text-[#71715A] mb-1">
-                              <span>Simular hasta</span>
-                              <span>{inflMaxRange}% Inflación</span>
-                            </div>
-                            <input
-                              type="range"
-                              min="10"
-                              max="50"
-                              step="5"
-                              value={inflMaxRange}
-                              onChange={(e) => setInflMaxRange(parseInt(e.target.value))}
-                              className="w-full h-1 bg-[#D9D2C5]/50 rounded-lg appearance-none cursor-pointer accent-[#5A716E]"
-                            />
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Content Grid */}
-                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
-                        
-                        {/* Line Chart Panel */}
-                        <div className="lg:col-span-8 bg-white p-5 rounded-2xl border border-[#D9D2C5] space-y-4 shadow-xs">
-                          <div className="flex justify-between items-center text-xs font-bold text-[#7A746B] uppercase tracking-wide">
-                            <span>
-                              Comportamiento de la Oferta ({sensitivityMetric === 'k' ? 'Factor K Polinómico' : 'Precio de Venta Total'}) por Curva de Inflación
-                            </span>
-                            <span className="font-mono text-[10px] text-[#A4947E]">{sensitivityData.length} puntos calculados</span>
-                          </div>
-
-                          <div className="h-72 sm:h-96 w-full font-sans">
-                            <ResponsiveContainer width="100%" height="100%">
-                              <LineChart data={sensitivityData} margin={{ top: 10, right: 10, left: 10, bottom: 5 }}>
-                                <CartesianGrid strokeDasharray="3 3" opacity={0.15} stroke="#D9D2C5" />
-                                <XAxis 
-                                  dataKey="inflation" 
-                                  type="number"
-                                  domain={[0, inflMaxRange]}
-                                  tickFormatter={(val) => `${val.toFixed(1)}%`}
-                                  tick={{ fontSize: 10, fill: '#7A746B' }}
-                                />
-                                <YAxis 
-                                  domain={['auto', 'auto']}
-                                  tickFormatter={(val) => sensitivityMetric === 'k' ? val.toFixed(4) : `$${(val / 1e6).toFixed(1)}M`}
-                                  tick={{ fontSize: 10, fill: '#7A746B' }}
-                                />
-                                <ReTooltip 
-                                  formatter={(value: any, name: string) => {
-                                    const parsedName = name === 'min_k' || name === 'min_pv' 
-                                      ? 'Mínimo (Agresivo)' 
-                                      : name === 'opt_k' || name === 'opt_pv' 
-                                        ? 'Óptimo (Estándar)' 
-                                        : 'Máximo (Protegido)';
-                                    const formattedVal = sensitivityMetric === 'k' 
-                                      ? Number(value).toFixed(4) 
-                                      : fmtLocal(Number(value));
-                                    return [formattedVal, parsedName];
-                                  }}
-                                  labelFormatter={(label: any) => `Inflación Supuesta: ${Number(label).toFixed(1)}%`}
-                                  contentStyle={{ backgroundColor: '#F5F2ED', border: '1px solid #D9D2C5', borderRadius: '12px', fontSize: '11px' }}
-                                />
-                                <Legend wrapperStyle={{ fontSize: '10px' }} />
-                                <Line 
-                                  type="monotone" 
-                                  dataKey={sensitivityMetric === 'k' ? 'min_k' : 'min_pv'} 
-                                  stroke="#71715A" 
-                                  strokeWidth={2}
-                                  name={sensitivityMetric === 'k' ? 'min_k' : 'min_pv'}
-                                  dot={{ r: 2 }}
-                                  activeDot={{ r: 5 }}
-                                />
-                                <Line 
-                                  type="monotone" 
-                                  dataKey={sensitivityMetric === 'k' ? 'opt_k' : 'opt_pv'} 
-                                  stroke="#5A716E" 
-                                  strokeWidth={3}
-                                  name={sensitivityMetric === 'k' ? 'opt_k' : 'opt_pv'}
-                                  dot={{ r: 3 }}
-                                  activeDot={{ r: 6 }}
-                                />
-                                <Line 
-                                  type="monotone" 
-                                  dataKey={sensitivityMetric === 'k' ? 'max_k' : 'max_pv'} 
-                                  stroke="#8C6A5A" 
-                                  strokeWidth={2}
-                                  name={sensitivityMetric === 'k' ? 'max_k' : 'max_pv'}
-                                  dot={{ r: 2 }}
-                                  activeDot={{ r: 5 }}
-                                />
-                              </LineChart>
-                            </ResponsiveContainer>
-                          </div>
-                        </div>
-
-                        {/* Analytical & Elasticity Explanatory Panel */}
-                        <div className="lg:col-span-4 bg-white p-5 rounded-2xl border border-[#D9D2C5] flex flex-col justify-between space-y-4 shadow-xs">
-                          <div className="space-y-4">
-                            <span className="text-xs font-bold text-[#7A746B] uppercase tracking-wide block border-b border-[#F0EDE9] pb-2">
-                              Reporte de Elasticidad e Impacto
-                            </span>
-
-                            <p className="text-[11px] text-[#7A746B] leading-relaxed font-sans">
-                              La inclinación o pendiente de las curvas demuestra la **elasticidad lineal** del presupuesto respecto al incremento en la tasa de inflación en cada escenario:
-                            </p>
-
-                            <div className="space-y-3">
-                              {/* Scenario Min Slope */}
-                              <div className="p-3 bg-[#71715A]/5 rounded-xl border border-[#71715A]/10 space-y-1">
-                                <div className="flex justify-between items-center">
-                                  <span className="text-[10px] font-bold text-[#71715A] uppercase tracking-wide">Mínimo (Agresivo)</span>
-                                  <span className="text-[10px] font-mono font-bold text-[#71715A]">b = {inputs.ben_min}%</span>
-                                </div>
-                                <div className="flex justify-between items-baseline font-mono text-xs">
-                                  <span className="text-gray-500 text-[10px]">Δ K Factor:</span>
-                                  <span className="font-bold text-gray-800">
-                                    +{((calcEscenario(inputs, 10, inputs.ben_min).k - calcEscenario(inputs, 0, inputs.ben_min).k) / 10).toFixed(5)} / 1%
-                                  </span>
-                                </div>
-                                <div className="flex justify-between items-baseline font-mono text-xs">
-                                  <span className="text-gray-500 text-[10px]">Δ Oferta Total:</span>
-                                  <span className="font-bold text-[#71715A]">
-                                    +{fmtLocal(((calcEscenario(inputs, 10, inputs.ben_min).pv_total - calcEscenario(inputs, 0, inputs.ben_min).pv_total) / 10))}
-                                  </span>
-                                </div>
-                              </div>
-
-                              {/* Scenario Opt Slope */}
-                              <div className="p-3 bg-[#5A716E]/5 rounded-xl border border-[#5A716E]/10 space-y-1">
-                                <div className="flex justify-between items-center">
-                                  <span className="text-[10px] font-bold text-[#5A716E] uppercase tracking-wide">Óptimo (Estándar)</span>
-                                  <span className="text-[10px] font-mono font-bold text-[#5A716E]">b = {inputs.ben_opt}%</span>
-                                </div>
-                                <div className="flex justify-between items-baseline font-mono text-xs">
-                                  <span className="text-gray-500 text-[10px]">Δ K Factor:</span>
-                                  <span className="font-bold text-gray-800">
-                                    +{((calcEscenario(inputs, 10, inputs.ben_opt).k - calcEscenario(inputs, 0, inputs.ben_opt).k) / 10).toFixed(5)} / 1%
-                                  </span>
-                                </div>
-                                <div className="flex justify-between items-baseline font-mono text-xs">
-                                  <span className="text-gray-500 text-[10px]">Δ Oferta Total:</span>
-                                  <span className="font-bold text-[#5A716E]">
-                                    +{fmtLocal(((calcEscenario(inputs, 10, inputs.ben_opt).pv_total - calcEscenario(inputs, 0, inputs.ben_opt).pv_total) / 10))}
-                                  </span>
-                                </div>
-                              </div>
-
-                              {/* Scenario Max Slope */}
-                              <div className="p-3 bg-[#8C6A5A]/5 rounded-xl border border-[#8C6A5A]/10 space-y-1">
-                                <div className="flex justify-between items-center">
-                                  <span className="text-[10px] font-bold text-[#8C6A5A] uppercase tracking-wide">Máximo (Protegido)</span>
-                                  <span className="text-[10px] font-mono font-bold text-[#8C6A5A]">b = {inputs.ben_max}%</span>
-                                </div>
-                                <div className="flex justify-between items-baseline font-mono text-xs">
-                                  <span className="text-gray-500 text-[10px]">Δ K Factor:</span>
-                                  <span className="font-bold text-gray-800">
-                                    +{((calcEscenario(inputs, 10, inputs.ben_max).k - calcEscenario(inputs, 0, inputs.ben_max).k) / 10).toFixed(5)} / 1%
-                                  </span>
-                                </div>
-                                <div className="flex justify-between items-baseline font-mono text-xs">
-                                  <span className="text-gray-500 text-[10px]">Δ Oferta Total:</span>
-                                  <span className="font-bold text-[#8C6A5A]">
-                                    +{fmtLocal(((calcEscenario(inputs, 10, inputs.ben_max).pv_total - calcEscenario(inputs, 0, inputs.ben_max).pv_total) / 10))}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="mt-4 p-3 bg-[#F5F2ED] rounded-xl border border-[#D9D2C5] text-[10px] text-[#7A746B] leading-relaxed font-sans">
-                            <span className="font-bold text-[#3A3732] block uppercase tracking-wider mb-0.5">Influencia del Acopio:</span>
-                            El acopio financiero por anticipo contractual de H-30 disminuye la base de financiamiento neta en obra, lo que a su vez mitiga eficazmente la pendiente de ascenso.
-                          </div>
-                        </div>
-
-                      </div>
-
-                    </div>
-
-                  </div>
-                )}                   {/* TAB 3: FORMULA INSPECTOR */}
-                {activeTab === 'formulas' && (
-                  <div className="space-y-6 text-[#3A3732]">
-                    <div className="bg-[#F5F2ED] p-4 rounded-xl border border-[#D9D2C5]">
-                      <span className="font-bold text-[#3A3732] block text-xs uppercase mb-1">Cálculo de Coeficiente Multiplicador Polinómico K</span>
-                      <p className="text-xs text-[#7A746B] leading-relaxed font-sans">
-                        La devaluación, la estructura impositiva y el descalce de caja determinan el factor multiplicador final **K** aplicado al costo directo base. 
-                        A continuación se presenta un recuento auditado paso a paso con los valores actuales en tiempo real:
-                      </p>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 font-mono text-xs">
-                      
-                      {/* Step by Step Operations card */}
-                      <div className="bg-white p-5 rounded-2xl border border-[#D9D2C5] space-y-4">
-                        <span className="font-bold text-[#5A716E] border-b border-[#F0EDE9] pb-1.5 block text-[11px] uppercase">Rastro del Escenario Óptimo</span>
-                        
-                        <div className="space-y-3">
-                          <div>
-                            <span className="text-[10px] text-[#A4947E] block uppercase">1. Costo Base Total Operativo (cd + ci + seguros + imprevistos + sellado)</span>
-                            <div className="font-semibold text-[#2D2A26] mt-0.5 text-[11px]">
-                              {fmtLocal(results.opt.sub5)}
-                            </div>
-                            <span className="text-[9px] text-[#A4947E] block mt-0.5">Fórmula: DIRECTO + INDIRECTO + SEGUROS + GARANTÍAS + SELLADO + APORTES + IMPREVISTOS</span>
-                          </div>
-
-                          <div>
-                            <span className="text-[10px] text-[#A4947E] block uppercase">2. Costo Total Obra con Inflación Supuesta ({inputs.inf_opt}%)</span>
-                            <div className="font-semibold text-[#2D2A26] mt-0.5 text-[11px]">
-                              {fmtLocal(results.opt.c_total)}
-                            </div>
-                            <span className="text-[9px] text-[#A4947E] block mt-0.5">Fórmula: Costo Operativo + (Costo Operativo * {inputs.inf_opt}%) + Gastos Generales ({inputs.t_gg}%)</span>
-                          </div>
-
-                          <div>
-                            <span className="text-[10px] text-[#A4947E] block uppercase">3. Descuento de Acopio y Costo Financiero Neto ({inputs.t_fin}%)</span>
-                            <div className="font-semibold text-[#2D2A26] mt-0.5 text-[11px]">
-                              {fmtLocal(results.opt.fin)}
-                            </div>
-                            <span className="text-[9px] text-[#A4947E] block mt-0.5">
-                              Fórmula: Max(0, Costo Obra - {fmtLocal(advanceValue)}) * {inputs.t_fin}%
-                            </span>
-                          </div>
-
-                          <div>
-                            <span className="text-[10px] text-[#A4947E] block uppercase">4. Beneficio de Empresa ({inputs.ben_opt}%)</span>
-                            <div className="font-semibold text-[#2D2A26] mt-0.5 text-[11px]">
-                              {fmtLocal(results.opt.ben)}
-                            </div>
-                            <span className="text-[9px] text-[#A4947E] block mt-0.5">Fórmula: (Costo Obra + Costo Financiero) * {inputs.ben_opt}%</span>
-                          </div>
-
-                          <div>
-                            <span className="text-[10px] text-[#A4947E] block uppercase">5. Precio de Venta de Oferta (Con IVA 21% e Impuestos Locales)</span>
-                            <div className="font-bold text-[#5A716E] mt-0.5 text-sm">
-                              {fmtLocal(results.opt.pv_total)}
-                            </div>
-                            <span className="text-[9px] text-[#A4947E] block mt-0.5">Fórmula final con Ingresos Brutos (3.5% Santa Fe), IVA y Cheque</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Mathematical logic equations definitions */}
-                      <div className="bg-[#3A3732] text-[#F5F2ED] p-5 rounded-2xl border border-[#2D2A26] space-y-4">
-                        <span className="font-bold text-[#B6A699] border-b border-[#2D2A26] pb-1.5 block text-[11px] uppercase">Ecuación Coeficiente K</span>
-                        
-                        <div className="space-y-4 leading-relaxed text-xs">
-                          <p className="text-[#C7BDB3] text-[11px]">
-                            El factor K se utiliza posteriormente en el rubro comercial para ajustar certificaciones sobre precios básicos de licitación:
-                          </p>
-                          
-                          <div className="bg-[#2D2A26]/80 p-4 rounded-xl border border-[#1C1A18]">
-                            <span className="text-[#A4947E] block text-[9px] font-bold uppercase mb-1">Ecuación Estándar</span>
-                            <div className="text-sm font-bold text-white font-mono">
-                              K = Venta / Costo Directo
-                            </div>
-                            <div className="text-[#D4CEC5] text-[10px] mt-2">
-                              Óptimo: {fmtLocal(results.opt.pv_total)} / {fmtLocal(results.opt.cd)}
-                            </div>
-                            <div className="text-lg font-extrabold text-[#B6A699] font-display mt-1">
-                              = {fmtFactor(results.opt.k)}
-                            </div>
-                          </div>
-
-                          <div className="space-y-2 text-[#C7BDB3] text-[11px]">
-                            <span className="font-bold text-white block text-[10px]">Puntos Críticos de Cumplimiento:</span>
-                            <ul className="list-disc pl-4 space-y-1">
-                              <li>**Amortización de Equipos Propios**: Incorporada de forma directa en el Costo Directo Base de Obra.</li>
-                              <li>**Impuesto al Cheque**: Formulado con alícuotas compuestas para descuento contable de un {advancePercentOpt.toFixed(0)}%.</li>
-                              <li>**Ahorro de Caja**: El acopio preventivo de H-30 disminuye el interés de préstamo puente del descubierto bancario.</li>
-                            </ul>
-                          </div>
-                        </div>
-                      </div>
-
-                    </div>
-                  </div>
+                  <ChartsTab
+                    inputs={inputs}
+                    results={results}
+                    selectedScenario={selectedScenario}
+                    activeResult={activeResult}
+                    sensitivityMetric={sensitivityMetric}
+                    setSensitivityMetric={setSensitivityMetric}
+                    inflMaxRange={inflMaxRange}
+                    setInflMaxRange={setInflMaxRange}
+                  />
                 )}
 
+                {/* TAB 3: FORMULAS */}
+                {activeTab === 'formulas' && (
+                  <FormulasTab
+                    inputs={inputs}
+                    results={results}
+                  />
+                )}
+
+                {/* TAB 4: GANTT */}
                 {activeTab === 'gantt' && (
-                  <div className="space-y-6">
-                    {/* Header Controls for Gantt */}
-                    <div className="bg-[#F5F2ED] p-5 rounded-2xl border border-[#D9D2C5] space-y-4">
-                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                        <div className="space-y-1">
-                          <h4 className="font-bold text-sm text-[#3A3732] uppercase tracking-wider flex items-center gap-2">
-                            <Layers className="h-4 w-4 text-[#5A716E]" />
-                            Cronograma de Obra Vial Estimado (Diagrama Gantt)
-                          </h4>
-                          <p className="text-xs text-[#7A746B] leading-relaxed">
-                            Visualización de las fases del proyecto de infraestructura, hitos contractuales clave y su avance físico. 
-                            Las fases se adaptan dinámicamente según el plazo total y cargan flujos del Costo Directo base.
-                          </p>
-                        </div>
-                        
-                        {/* Duration control slider */}
-                        <div className="bg-white px-4 py-2.5 rounded-xl border border-[#D9D2C5] shrink-0 w-full sm:w-auto shadow-xs">
-                          <div className="flex justify-between items-center gap-4 mb-1">
-                            <span className="text-[10px] font-bold text-[#71715A] uppercase tracking-wide">Plazo Obra Total</span>
-                            <span className="text-xs font-mono font-bold text-[#5A716E] bg-[#5A716E]/10 px-2 py-0.5 rounded-lg">{plazoObra} Meses</span>
-                          </div>
-                          <input
-                            type="range"
-                            min="1"
-                            max="12"
-                            step="1"
-                            value={plazoObra}
-                            onChange={(e) => setPlazoObra(parseInt(e.target.value))}
-                            className="w-full sm:w-48 h-1.5 bg-[#D9D2C5]/50 rounded-lg appearance-none cursor-pointer accent-[#5A716E]"
-                          />
-                        </div>
-                      </div>
-                    </div>
+                  <GanttTab
+                    plazoObra={plazoObra}
+                    setPlazoObra={setPlazoObra}
+                    results={results}
+                    gp1={gp1}
+                    setGp1={setGp1}
+                    gp2={gp2}
+                    setGp2={setGp2}
+                    gp3={gp3}
+                    setGp3={setGp3}
+                    gp4={gp4}
+                    setGp4={setGp4}
+                    gp5={gp5}
+                    setGp5={setGp5}
+                    gp6={gp6}
+                    setGp6={setGp6}
+                  />
+                )}
 
-                    {/* Gantt Graphics Grid Wrapper */}
-                    <div className="bg-white rounded-2xl border border-[#D9D2C5] overflow-hidden shadow-xs">
-                      <div className="p-4 sm:p-6 overflow-x-auto">
-                        <div className="min-w-[800px] space-y-5">
-                          
-                          {/* Row: Weeks / Month Grid Headers */}
-                          <div className="grid grid-cols-12 gap-4 items-center">
-                            <div className="col-span-4">
-                              <span className="text-[10px] font-bold uppercase tracking-wider text-[#71715A]">Especificación y Costeo de Fases</span>
-                            </div>
-                            <div className="col-span-8">
-                              <div className="grid" style={{ gridTemplateColumns: `repeat(${plazoObra}, minmax(0, 1fr))` }}>
-                                {Array.from({ length: plazoObra }, (_, i) => i + 1).map((mes) => (
-                                  <div key={mes} className="text-center font-mono text-[10px] font-bold text-[#7A746B] border-l border-[#F0EDE9] py-1">
-                                    M{mes}
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Phases Render Loop */}
-                          <div className="space-y-4 border-t border-[#F0EDE9] pt-4">
-                            {phasesData.map((phase) => {
-                              const isCompleted = phase.progress === 100;
-                              const estimatedCost = results.opt.cd * phase.costPct;
-
-                              return (
-                                <div key={phase.id} className="grid grid-cols-12 gap-4 items-center group py-2 rounded-xl hover:bg-[#F9F8F6]/50 transition-colors">
-                                  {/* Left details panel */}
-                                  <div className="col-span-4 space-y-1.5 pr-2 border-r border-[#F0EDE9]">
-                                    <div className="flex justify-between items-start gap-2">
-                                      <h5 className="font-bold text-xs text-[#2D2A26] leading-snug">{phase.name}</h5>
-                                      <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-[#F5F2ED] text-[#71715A] shrink-0">
-                                        M{phase.start} - M{phase.end}
-                                      </span>
-                                    </div>
-                                    <div className="flex items-center justify-between text-[11px] text-[#7A746B]">
-                                      <span className="font-mono">Asignación: <strong className="text-[#3A3732] font-semibold">{fmtLocal(estimatedCost)}</strong> ({(phase.costPct * 100).toFixed(0)}%)</span>
-                                      <span className="font-mono font-bold text-[#5A716E] bg-[#5A716E]/5 px-1.5 py-0.2 rounded">{phase.progress}%</span>
-                                    </div>
-                                    
-                                    {/* Small slider inside row to let user adjust progress easily */}
-                                    <div className="flex items-center gap-2 pt-1">
-                                      <span className="text-[9px] font-bold text-[#A4947E] uppercase">Ajustar Avance:</span>
-                                      <input
-                                        type="range"
-                                        min="0"
-                                        max="100"
-                                        step="5"
-                                        value={phase.progress}
-                                        onChange={(e) => phase.setProgress(parseInt(e.target.value))}
-                                        className="h-1 bg-[#D9D2C5]/50 rounded-lg appearance-none cursor-pointer accent-[#5A716E] flex-1 max-w-[120px]"
-                                      />
-                                    </div>
-                                  </div>
-
-                                  {/* Right side: Dynamic Grid and Bar */}
-                                  <div className="col-span-8 relative py-3 font-sans">
-                                    {/* Monthly background column lines */}
-                                    <div className="absolute inset-0 grid" style={{ gridTemplateColumns: `repeat(${plazoObra}, minmax(0, 1fr))` }}>
-                                      {Array.from({ length: plazoObra }, (_, i) => i + 1).map((mes) => (
-                                        <div key={mes} className="border-l border-[#F0EDE9] h-full opacity-60"></div>
-                                      ))}
-                                      {/* Last rightmost border for layout completion */}
-                                      <div className="border-r border-[#F0EDE9] h-full absolute right-0 top-0 opacity-60"></div>
-                                    </div>
-
-                                    {/* The Horizontal Gantt Bar */}
-                                    <div className="grid relative z-10" style={{ gridTemplateColumns: `repeat(${plazoObra}, minmax(0, 1fr))` }}>
-                                      <div
-                                        className="h-7 rounded-lg overflow-hidden relative shadow-xs flex items-center transition-all duration-300"
-                                        style={{
-                                          gridColumn: `${phase.start} / ${phase.end + 1}`,
-                                          backgroundColor: `${phase.colorClass}1F`, // ~12% opacity
-                                          border: `1px solid ${phase.colorClass}50`,
-                                        }}
-                                      >
-                                        {/* Colored Progress Fill inside Bar */}
-                                        <div
-                                          className={`h-full opacity-85 transition-all duration-300 ${phase.colorClass}`}
-                                          style={{ width: `${phase.progress}%` }}
-                                        />
-
-                                        {/* Text info overlay centering inside the bar */}
-                                        <div className="absolute inset-0 flex items-center justify-between px-3 text-[10px] font-bold pointer-events-none">
-                                          <span className={`${isCompleted ? 'text-white' : 'text-[#3A3732]'} truncate max-w-[240px]`}>
-                                            {isCompleted ? "✓ Completado" : `En curso — Mes ${phase.start}`}
-                                          </span>
-                                          <span className={phase.progress > 50 && isCompleted ? 'text-white' : 'text-[#3A3732]'}>
-                                            {phase.progress}%
-                                          </span>
-                                        </div>
-                                      </div>
-
-                                      {/* Hito/Milestone Indicator (Diamond badge on the grid column) */}
-                                      <div
-                                        className="absolute -top-3.5 flex flex-col items-center z-20 pointer-events-none"
-                                        style={{
-                                          left: `calc(${((phase.milestoneMonth - 0.5) / plazoObra) * 100}% - 8px)`
-                                        }}
-                                        title={`Hito: ${phase.milestone} (Mes ${phase.milestoneMonth})`}
-                                      >
-                                        <div className={`h-4 w-4 transform rotate-45 border flex items-center justify-center shadow-xs transition-colors ${
-                                          isCompleted
-                                            ? 'bg-emerald-600 border-emerald-800 text-white'
-                                            : 'bg-amber-500 border-amber-700 text-white'
-                                        }`}>
-                                          <span className="transform -rotate-45 text-[7px] font-extrabold">H</span>
-                                        </div>
-                                      </div>
-
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Milestones / Checklist Box */}
-                    <div className="bg-white p-5 rounded-2xl border border-[#D9D2C5] shadow-xs">
-                      <h4 className="text-xs font-bold tracking-wider text-[#71715A] uppercase mb-4 flex items-center gap-2">
-                        <CheckCircle className="h-4 w-4 text-[#5A716E]" />
-                        Listado de Control de Hitos Críticos Viales
-                      </h4>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {phasesData.map((phase) => {
-                          const isCompleted = phase.progress === 100;
-                          return (
-                            <div key={phase.id} className="flex gap-3 items-start p-3 bg-[#F5F2ED]/40 rounded-xl border border-[#D9D2C5]/50">
-                              <span className={`inline-flex shrink-0 p-1 rounded-full text-white ${
-                                isCompleted ? 'bg-emerald-600' : 'bg-amber-500'
-                              }`}>
-                                <CheckCircle className="h-3.5 w-3.5" />
-                              </span>
-                              <div className="space-y-1">
-                                <span className="text-[10px] font-bold text-[#71715A] uppercase tracking-wide">
-                                  Hito de Fase {phase.id} — Mes {phase.milestoneMonth}
-                                </span>
-                                <h5 className="font-bold text-xs text-gray-900 leading-snug">{phase.milestone}</h5>
-                                <div className="flex gap-2 items-center">
-                                  <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded uppercase ${
-                                    isCompleted ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                                  }`}>
-                                    {isCompleted ? "Alcanzado" : `${phase.progress}% de avance`}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
+                {/* TAB 5: RIESGOS */}
+                {activeTab === 'riesgos' && (
+                  <RiesgosTab
+                    selectedScenario={selectedScenario}
+                    risksState={risksState}
+                    handleUpdateRisk={handleUpdateRisk}
+                    inputs={inputs}
+                    setInputs={setInputs}
+                  />
                 )}
 
               </div>

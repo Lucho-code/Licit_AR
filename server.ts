@@ -7,18 +7,7 @@ import { createServer as createViteServer } from "vite";
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
-
-// Simple in-memory rate limiter for the AI endpoint (no extra packages needed)
-const _rl = new Map<string, { count: number; reset: number }>();
-function rateLimited(ip: string, maxReq = 10, windowMs = 5 * 60_000): boolean {
-  const now = Date.now();
-  const entry = _rl.get(ip);
-  if (!entry || now > entry.reset) { _rl.set(ip, { count: 1, reset: now + windowMs }); return false; }
-  if (entry.count >= maxReq) return true;
-  entry.count++;
-  return false;
-}
+const PORT = 3000;
 
 // Set up body parsers with limits for handling base64 uploads
 app.use(express.json({ limit: "50mb" }));
@@ -31,11 +20,6 @@ app.get("/api/health", (req, res) => {
 
 // Endpoint to analyze roadwork specification document and extract cost estimates
 app.post("/api/analyze-pliego", async (req, res) => {
-  const clientIp = req.ip ?? req.socket.remoteAddress ?? 'unknown';
-  if (rateLimited(clientIp)) {
-    return res.status(429).json({ error: "Demasiadas solicitudes. Esperá unos minutos antes de volver a analizar." });
-  }
-
   try {
     const { fileName, fileType, fileData, textContent, userPrompt } = req.body;
 
@@ -58,8 +42,7 @@ app.post("/api/analyze-pliego", async (req, res) => {
     });
 
     // We build standard parts depending on whether we received binary data or just text content
-    type ContentPart = { text: string } | { inlineData: { mimeType: string; data: string } };
-    const contentsParts: ContentPart[] = [];
+    const contentsParts: any[] = [];
 
     if (fileData && fileType) {
       // Support file uploads (PDF, text files, photos of specifications)
@@ -92,7 +75,7 @@ app.post("/api/analyze-pliego", async (req, res) => {
     });
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
+      model: "gemini-3.5-flash",
       contents: { parts: contentsParts },
       config: {
         systemInstruction: `Eres un ingeniero civil senior y especialista en análisis financiero contable para empresas constructoras viales en la provincia de Santa Fe, Argentina (febrero de 2026).
@@ -182,7 +165,18 @@ Construye una justificación excelente ('explanation') explicando técnicamente 
       },
     });
 
-    const parsedData = JSON.parse(response.text || "{}");
+    let parsedData: any = {};
+    const rawText = response.text || "";
+    try {
+      // Strips surrounding markdown block markers if present
+      const cleanJson = rawText.trim().replace(/^```json\s*/i, "").replace(/```\s*$/, "").trim();
+      parsedData = JSON.parse(cleanJson || "{}");
+    } catch (err) {
+      console.error("Error al deserializar JSON de Gemini:", rawText, err);
+      return res.status(500).json({
+        error: "El motor de IA de Gemini retornó una respuesta con estructura inesperada. Intente subir nuevamente el documento."
+      });
+    }
     return res.json({ success: true, ...parsedData });
   } catch (error: any) {
     console.error("Error al procesar el documento con Gemini:", error);
