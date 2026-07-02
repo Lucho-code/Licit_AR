@@ -9,9 +9,47 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
+// Gemini model is configurable; default is the stable GA flash model.
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+
 // Set up body parsers with limits for handling base64 uploads
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
+// --- Basic protection for the AI endpoint ---
+
+// In-memory per-IP rate limit: max requests per window. Enough for a
+// single-instance deployment; use a shared store if scaled horizontally.
+const RATE_LIMIT_MAX = 10;
+const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
+const rateLimitHits = new Map<string, { count: number; windowStart: number }>();
+
+function rateLimit(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const ip = req.ip || req.socket.remoteAddress || "unknown";
+  const now = Date.now();
+  const entry = rateLimitHits.get(ip);
+  if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
+    rateLimitHits.set(ip, { count: 1, windowStart: now });
+    return next();
+  }
+  entry.count++;
+  if (entry.count > RATE_LIMIT_MAX) {
+    return res.status(429).json({
+      error: "Demasiadas solicitudes de análisis. Intente nuevamente en unos minutos.",
+    });
+  }
+  return next();
+}
+
+// Optional bearer-token auth: set API_ACCESS_TOKEN to require it.
+// If unset the endpoint stays open (development / trusted network).
+function optionalAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const requiredToken = process.env.API_ACCESS_TOKEN;
+  if (!requiredToken) return next();
+  const header = req.headers.authorization || "";
+  if (header === `Bearer ${requiredToken}`) return next();
+  return res.status(401).json({ error: "No autorizado." });
+}
 
 // Healthy check endpoint
 app.get("/api/health", (req, res) => {
@@ -19,7 +57,7 @@ app.get("/api/health", (req, res) => {
 });
 
 // Endpoint to analyze roadwork specification document and extract cost estimates
-app.post("/api/analyze-pliego", async (req, res) => {
+app.post("/api/analyze-pliego", rateLimit, optionalAuth, async (req, res) => {
   try {
     const { fileName, fileType, fileData, textContent, userPrompt } = req.body;
 
@@ -75,7 +113,7 @@ app.post("/api/analyze-pliego", async (req, res) => {
     });
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: GEMINI_MODEL,
       contents: { parts: contentsParts },
       config: {
         systemInstruction: `Eres un ingeniero civil senior y especialista en análisis financiero contable para empresas constructoras viales en la provincia de Santa Fe, Argentina (febrero de 2026).
@@ -179,9 +217,10 @@ Construye una justificación excelente ('explanation') explicando técnicamente 
     }
     return res.json({ success: true, ...parsedData });
   } catch (error: any) {
+    // Log full detail server-side only; never echo internals to the client.
     console.error("Error al procesar el documento con Gemini:", error);
     return res.status(500).json({
-      error: "Error interno al analizar el pliego. " + (error.message || ""),
+      error: "Error interno al analizar el pliego. Verifique el documento e intente nuevamente.",
     });
   }
 });
