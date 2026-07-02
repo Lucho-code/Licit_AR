@@ -10,6 +10,7 @@ import { fmtLocal, fmtFactor, calcEscenario } from '../utils';
 interface FormulasTabProps {
   inputs: InputsState;
   results: CalculationResults;
+  plazoObra: number;
 }
 
 // Interactive official price indexes and polynomial K redetermination calculator component
@@ -206,7 +207,7 @@ const RedeterminationCalculator: React.FC = () => {
 };
 
 // Component to project K coefficient across the 3 scenarios (Min, Opt, Max) using expected index value input
-const KProjectionCalculator: React.FC<FormulasTabProps> = ({ inputs, results }) => {
+const KProjectionCalculator: React.FC<FormulasTabProps> = ({ inputs, results, plazoObra }) => {
   const [baseIndex, setBaseIndex] = useState<number>(1000);
   const [expectedIndex, setExpectedIndex] = useState<number>(1350);
 
@@ -216,16 +217,16 @@ const KProjectionCalculator: React.FC<FormulasTabProps> = ({ inputs, results }) 
   }, [baseIndex, expectedIndex]);
 
   const projMin = useMemo(() => {
-    return calcEscenario(inputs, projectedInflation, inputs.ben_min);
-  }, [inputs, projectedInflation]);
+    return calcEscenario(inputs, projectedInflation, inputs.ben_min, plazoObra);
+  }, [inputs, projectedInflation, plazoObra]);
 
   const projOpt = useMemo(() => {
-    return calcEscenario(inputs, projectedInflation, inputs.ben_opt);
-  }, [inputs, projectedInflation]);
+    return calcEscenario(inputs, projectedInflation, inputs.ben_opt, plazoObra);
+  }, [inputs, projectedInflation, plazoObra]);
 
   const projMax = useMemo(() => {
-    return calcEscenario(inputs, projectedInflation, inputs.ben_max);
-  }, [inputs, projectedInflation]);
+    return calcEscenario(inputs, projectedInflation, inputs.ben_max, plazoObra);
+  }, [inputs, projectedInflation, plazoObra]);
 
   // Handle index limits nicely
   const handleIndexChange = (val: number, type: 'base' | 'expected') => {
@@ -419,7 +420,7 @@ const KProjectionCalculator: React.FC<FormulasTabProps> = ({ inputs, results }) 
 };
 
 // Component to convert custom K to Offer value and vice versa
-const BidirectionalKCalculator: React.FC<FormulasTabProps> = ({ inputs, results }) => {
+const BidirectionalKCalculator: React.FC<Omit<FormulasTabProps, 'plazoObra'>> = ({ inputs, results }) => {
   const cdBase = inputs.base_cd;
   
   const [customK, setCustomK] = useState<number>(() => parseFloat(results.opt.k.toFixed(4)));
@@ -602,7 +603,8 @@ const BidirectionalKCalculator: React.FC<FormulasTabProps> = ({ inputs, results 
 
 export const FormulasTab: React.FC<FormulasTabProps> = React.memo(({
   inputs,
-  results
+  results,
+  plazoObra
 }) => {
   const advanceValue = useMemo(() => {
     return inputs.base_cant_ant * inputs.base_p_h30;
@@ -616,7 +618,7 @@ export const FormulasTab: React.FC<FormulasTabProps> = React.memo(({
   return (
     <div className="space-y-6 text-[#3A3732]">
       <div className="bg-[#F5F2ED] p-4 rounded-xl border border-[#D9D2C5]">
-        <span className="font-bold text-[#3A3732] block text-xs uppercase mb-1">Cálculo de Coeficiente Multiplicador Polinómico K</span>
+        <span className="font-bold text-[#3A3732] block text-xs uppercase mb-1">Cálculo del Coeficiente Resumen de Oferta K (PV / CD)</span>
         <p className="text-xs text-[#7A746B] leading-relaxed font-sans">
           La devaluación, la estructura impositiva y el descalce de caja determinan el factor multiplicador final **K** aplicado al costo directo base. 
           A continuación se presenta un recuento auditado paso a paso con los valores actuales en tiempo real:
@@ -646,12 +648,12 @@ export const FormulasTab: React.FC<FormulasTabProps> = React.memo(({
             </div>
 
             <div>
-              <span className="text-[10px] text-[#A4947E] block uppercase">3. Descuento de Acopio y Costo Financiero Neto ({inputs.t_fin}%)</span>
+              <span className="text-[10px] text-[#A4947E] block uppercase">3. Descuento de Acopio y Costo Financiero Neto ({inputs.t_fin}% mensual, plazo {plazoObra} meses)</span>
               <div className="font-semibold text-[#2D2A26] mt-0.5 text-[11px]">
                 {fmtLocal(results.opt.fin)}
               </div>
               <span className="text-[9px] text-[#A4947E] block mt-0.5">
-                Fórmula: Max(0, Costo Obra - {fmtLocal(advanceValue)}) * {inputs.t_fin}%
+                Fórmula: Max(0, Costo Obra - {fmtLocal(advanceValue)}) * ((1 + {inputs.t_fin}%)^({plazoObra}/2) - 1)
               </span>
             </div>
 
@@ -742,7 +744,7 @@ export const FormulasTab: React.FC<FormulasTabProps> = React.memo(({
           </span>
         </div>
 
-        <KProjectionCalculator inputs={inputs} results={results} />
+        <KProjectionCalculator inputs={inputs} results={results} plazoObra={plazoObra} />
       </div>
 
       {/* NEW SECTION: Conversión Directa Bidireccional (K ⇄ Oferta) */}

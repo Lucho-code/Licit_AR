@@ -1,12 +1,16 @@
-# Calculadora Vial Multiescenario para Análisis Polinómico 🛣️🧪
+# Licit_AR — Calculadora Vial Multiescenario (Coeficiente Resumen K) 🛣️🧪
 
-Una plataforma interactiva de simulación financiera avanzada orientada a la estimación y optimización del coeficiente polinómico **K** para propuestas en **licitaciones de obra pública vial**. Diseñada específicamente adaptando los parámetros, coeficientes y alícuotas fiscales vigentes en la provincia de Santa Fe, Argentina (febrero de 2026).
+Una plataforma interactiva de simulación financiera orientada a la estimación del **coeficiente resumen de oferta K** (relación Precio de Venta / Costo Directo) para propuestas en **licitaciones de obra pública vial**. Adaptada a los parámetros, coeficientes y alícuotas fiscales vigentes en la provincia de Santa Fe, Argentina (febrero de 2026).
+
+> **Nota terminológica:** el K de esta herramienta es el **coeficiente resumen / de pase** de la oferta. No es la "fórmula polinómica" de redeterminación de precios (índices INDEC / Ley 12.046 Santa Fe); para eso la app incluye una calculadora de redeterminación separada en la pestaña *Fórmulas*.
+>
+> **Descargo:** los valores impositivos y financieros son estimaciones de modelo. Verificar alícuotas vigentes con contador matriculado antes de presentar una oferta.
 
 ---
 
 ## 🌟 Descripción General
 
-Esta herramienta permite a las empresas constructoras y analistas de costos simular la viabilidad económica de su propuesta bajo condiciones de alta variabilidad macroeconómica. A partir de un **Costo Directo Base**, el sistema calcula de manera integrada todas las variables incidentes (costos indirectos, seguros, imprevistos, inflación proyectada, beneficio, impuesto al cheque e Ingresos Brutos de Santa Fe) y calcula en tiempo real el coeficiente polinómico **K** para tres escenarios simultáneos:
+Esta herramienta permite a las empresas constructoras y analistas de costos simular la viabilidad económica de su propuesta bajo condiciones de alta variabilidad macroeconómica. A partir de un **Costo Directo Base**, el sistema calcula de manera integrada todas las variables incidentes (costos indirectos, seguros, imprevistos, inflación proyectada, beneficio, impuesto al cheque e Ingresos Brutos de Santa Fe) y calcula en tiempo real el coeficiente resumen **K** para tres escenarios simultáneos:
 
 - **Mínimo (Agresivo):** Ideado para competir fuertemente en precio, reduciendo imprevistos y optimizando el beneficio.
 - **Óptimo (Estándar):** El punto de equilibrio óptimo que equilibra la rentabilidad empresarial con el resguardo contra fluctuaciones.
@@ -61,10 +65,10 @@ El modelo calcula secuencialmente el precio de oferta a partir de las siguientes
      * $Inflación$: Cobertura por devaluación supuesta ($Sub_5 \times \%Inflación$).
      * $GastosS\_Generale_s$: Incidencia de administración central ($(Sub_5 + Inflación) \times \%Gastos\_Generales$).
 
-3. **Costo Financiero Neto ($Fin$):**
+3. **Costo Financiero Neto ($Fin$)** — la tasa `t_fin` es **mensual** y compone durante la exposición promedio del capital (mitad del plazo, asumiendo certificación lineal):
    $$Anticipo = Cantidad_{H30} \times Precio_{H30}$$
    $$Base\_Financiera = \max(0, C_{total} - Anticipo)$$
-   $$Fin = Base\_Financiera \times \%Costo\_Financiero$$
+   $$Fin = Base\_Financiera \times \left[(1 + t_{fin})^{plazo/2} - 1\right]$$
 
 4. **Beneficio Empresarial ($Ben$):**
    $$Sub_{11} = C_{total} + Fin$$
@@ -72,14 +76,14 @@ El modelo calcula secuencialmente el precio de oferta a partir de las siguientes
 
 5. **Impuestos de Ley y Gravámenes ($Venta_{bruta}$):**
    $$Sub_{13} = Sub_{11} + Ben$$
-   * **Ingresos Brutos (IIBB Santa Fe):** $Sub_{13} \times 3.5\%$
-   * **Impuesto al Cheque:** $0.6\% \times (C_{total} + Sub_{13} \times 4.1\%)$
+   * **Impuesto al Cheque (Ley 25.413):** $0.6\% \times (C_{total} + Sub_{13} \times 4.1\%)$ — el 4,1% es un supuesto de rotación bancaria del modelo, no una alícuota legal; ajustar a la operatoria real.
+   * **Ingresos Brutos (IIBB Santa Fe, 3.5% con gross-up):** como IIBB integra su propia base imponible, se aplica $IIBB = (Sub_{13} + Cheque) \times \frac{0.035}{1 - 0.035}$, de modo que el impuesto resulte exactamente 3,5% del precio neto de IVA.
    * **IVA (21.0%):** $Sub_{13} \times 21\%$
 
 6. **Precio Total de Venta de Oferta ($PV$):**
    $$PV = Sub_{13} + IIBB + Cheque + IVA$$
 
-7. **Multiplicador Polinómico de Obra ($K$):**
+7. **Coeficiente Resumen de Oferta ($K$):**
    $$K = \frac{PV}{CD}$$
 
 ---
@@ -90,7 +94,7 @@ Es común preguntarse si un sistema que realiza cálculos financieros e ingenier
 
 ### 1. Fluidez de Interfaz Absoluta y Zero-Latency (Estado en Cliente)
 * **El Problema en Python:** Frameworks rápidos de Python (como *Streamlit* o *Gradio*) ejecutan el código de manera secuencial en el servidor. Cada vez que el analista mueve un slider de inflación o cambia el volumen de hormigón en un slider, los datos viajan al servidor Python, se re-evalúa el script completo, y se vuelve a pintar la interfaz. Esto provoca un parpadeo perceptible, lag transaccional y bloqueos visuales molestos en pantallas complejas.
-* **La Solución en React:** Toda la matemática matemática y polinómica corre de manera local inmediata e instantánea en el navegador del usuario mediante estados reactivos fluidos y memoizados (`useMemo`). El recalculo de los 20 rubros viales sobre tres escenarios simultáneos (Mínimo, Óptimo y Máximo) se ejecuta en menos de **2 milisegundos**, asegurando un arrastre del mouse sumamente suave y una retroalimentación en tiempo real perfecta.
+* **La Solución en React:** Toda la matemática del modelo corre de manera local en el navegador del usuario mediante estados reactivos memoizados (`useMemo`). El recálculo de los 20 rubros viales sobre tres escenarios simultáneos (Mínimo, Óptimo y Máximo) se ejecuta en milisegundos, asegurando retroalimentación en tiempo real.
 
 ### 2. Diseño de Experiencia de Usuario Exclusiva (UX/UI a Medida)
 * **El Problema en Python:** Los componentes de Streamlit o Dash tienen interfaces de plantillas rígidas e impersonales con diseño por defecto difícil de adaptar a marcas corporativas o estéticas avanzadas.
@@ -102,7 +106,7 @@ Es común preguntarse si un sistema que realiza cálculos financieros e ingenier
 
 ### 4. Concurrencia y Robustez de Tipado con TypeScript
 * El motor analítico de la simulación vial administra docenas de parámetros independientes (coeficientes, porcentajes de ley, alícuotas, acopios y costos).
-* Programar esto en Python sin un sistema rígido de tipado dinámico invita a errores de tipo silenciosos (`TypeError`) difíciles de trazar en producción. Con **TypeScript**, el 100% del modelo financiero está tipado de manera estricta. Cualquier discrepancia matemática es detectada por el compilador en tiempo de desarrollo, garantizando un resultado libre de bugs operacionales para el ofertante de la obra.
+* Programar esto en Python sin tipado estático invita a errores de tipo silenciosos difíciles de trazar en producción. El proyecto compila con **TypeScript en modo `strict`** y el motor financiero (`src/utils.ts`) cuenta con **tests unitarios (Vitest)** que validan la cadena de cálculo contra casos verificados a mano. El tipado y los tests reducen el riesgo de errores, pero no reemplazan la validación profesional de los resultados.
 
 ---
 
@@ -143,12 +147,17 @@ Asegúrate de contar con [Node.js](https://nodejs.org/) instalado (versión 18 o
    ```
    *La aplicación estará accesible de forma predeterminada mediante la dirección [http://localhost:3000](http://localhost:3000)*.
 
-3. **Verificar tipado y linter (TypeScript):**
+3. **Verificar tipado (TypeScript estricto):**
    ```bash
    npm run lint
    ```
 
-4. **Compilar para producción:**
+4. **Ejecutar tests unitarios del motor financiero:**
+   ```bash
+   npm test
+   ```
+
+5. **Compilar para producción:**
    ```bash
    npm run build
    ```

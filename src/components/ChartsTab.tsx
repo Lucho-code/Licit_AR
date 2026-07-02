@@ -32,6 +32,7 @@ interface ChartsTabProps {
   setSensitivityMetric: (metric: 'pv' | 'k') => void;
   inflMaxRange: number;
   setInflMaxRange: (range: number) => void;
+  plazoObra: number;
 }
 
 export const ChartsTab: React.FC<ChartsTabProps> = React.memo(({
@@ -42,7 +43,8 @@ export const ChartsTab: React.FC<ChartsTabProps> = React.memo(({
   sensitivityMetric,
   setSensitivityMetric,
   inflMaxRange,
-  setInflMaxRange
+  setInflMaxRange,
+  plazoObra
 }) => {
   // Data for Recharts Bar Chart
   const barChartData = useMemo(() => {
@@ -102,9 +104,9 @@ export const ChartsTab: React.FC<ChartsTabProps> = React.memo(({
     const steps = 10;
     for (let i = 0; i <= steps; i++) {
       const inflVal = (inflMaxRange / steps) * i;
-      const rMin = calcEscenario(inputs, inflVal, inputs.ben_min);
-      const rOpt = calcEscenario(inputs, inflVal, inputs.ben_opt);
-      const rMax = calcEscenario(inputs, inflVal, inputs.ben_max);
+      const rMin = calcEscenario(inputs, inflVal, inputs.ben_min, plazoObra);
+      const rOpt = calcEscenario(inputs, inflVal, inputs.ben_opt, plazoObra);
+      const rMax = calcEscenario(inputs, inflVal, inputs.ben_max, plazoObra);
       list.push({
         inflation: inflVal,
         formattedInflation: `${inflVal.toFixed(1)}%`,
@@ -117,7 +119,7 @@ export const ChartsTab: React.FC<ChartsTabProps> = React.memo(({
       });
     }
     return list;
-  }, [inputs, inflMaxRange]);
+  }, [inputs, inflMaxRange, plazoObra]);
 
   return (
     <div className="space-y-8">
@@ -268,7 +270,7 @@ export const ChartsTab: React.FC<ChartsTabProps> = React.memo(({
           <div className="lg:col-span-8 bg-white p-5 rounded-2xl border border-[#D9D2C5] space-y-4 shadow-xs">
             <div className="flex justify-between items-center text-xs font-bold text-[#7A746B] uppercase tracking-wide">
               <span>
-                Comportamiento de la Oferta ({sensitivityMetric === 'k' ? 'Factor K Polinómico' : 'Precio de Venta Total'}) por Curva de Inflación
+                Comportamiento de la Oferta ({sensitivityMetric === 'k' ? 'Coeficiente Resumen K' : 'Precio de Venta Total'}) por Curva de Inflación
               </span>
               <span className="font-mono text-[10px] text-[#A4947E]">{sensitivityData.length} puntos calculados</span>
             </div>
@@ -290,7 +292,7 @@ export const ChartsTab: React.FC<ChartsTabProps> = React.memo(({
                     tick={{ fontSize: 10, fill: '#7A746B' }}
                   />
                   <ReTooltip 
-                    formatter={(value: any, name: string) => {
+                    formatter={(value: any, name: any) => {
                       const parsedName = name === 'min_k' || name === 'min_pv' 
                         ? 'Mínimo (Agresivo)' 
                         : name === 'opt_k' || name === 'opt_pv' 
@@ -358,13 +360,13 @@ export const ChartsTab: React.FC<ChartsTabProps> = React.memo(({
                   <div className="flex justify-between items-baseline font-mono text-xs">
                     <span className="text-gray-500 text-[10px]">Δ K Factor:</span>
                     <span className="font-bold text-gray-800">
-                      +{((calcEscenario(inputs, 10, inputs.ben_min).k - calcEscenario(inputs, 0, inputs.ben_min).k) / 10).toFixed(5)} / 1%
+                      +{((calcEscenario(inputs, 10, inputs.ben_min, plazoObra).k - calcEscenario(inputs, 0, inputs.ben_min, plazoObra).k) / 10).toFixed(5)} / 1%
                     </span>
                   </div>
                   <div className="flex justify-between items-baseline font-mono text-xs">
                     <span className="text-gray-500 text-[10px]">Δ Oferta Total:</span>
                     <span className="font-bold text-[#71715A]">
-                      +{fmtLocal(((calcEscenario(inputs, 10, inputs.ben_min).pv_total - calcEscenario(inputs, 0, inputs.ben_min).pv_total) / 10))}
+                      +{fmtLocal(((calcEscenario(inputs, 10, inputs.ben_min, plazoObra).pv_total - calcEscenario(inputs, 0, inputs.ben_min, plazoObra).pv_total) / 10))}
                     </span>
                   </div>
                 </div>
@@ -378,13 +380,13 @@ export const ChartsTab: React.FC<ChartsTabProps> = React.memo(({
                   <div className="flex justify-between items-baseline font-mono text-xs">
                     <span className="text-gray-500 text-[10px]">Δ K Factor:</span>
                     <span className="font-bold text-gray-800">
-                      +{((calcEscenario(inputs, 10, inputs.ben_opt).k - calcEscenario(inputs, 0, inputs.ben_opt).k) / 10).toFixed(5)} / 1%
+                      +{((calcEscenario(inputs, 10, inputs.ben_opt, plazoObra).k - calcEscenario(inputs, 0, inputs.ben_opt, plazoObra).k) / 10).toFixed(5)} / 1%
                     </span>
                   </div>
                   <div className="flex justify-between items-baseline font-mono text-xs">
                     <span className="text-gray-500 text-[10px]">Δ Oferta Total:</span>
                     <span className="font-bold text-[#5A716E]">
-                      +{fmtLocal(((calcEscenario(inputs, 10, inputs.ben_opt).pv_total - calcEscenario(inputs, 0, inputs.ben_opt).pv_total) / 10))}
+                      +{fmtLocal(((calcEscenario(inputs, 10, inputs.ben_opt, plazoObra).pv_total - calcEscenario(inputs, 0, inputs.ben_opt, plazoObra).pv_total) / 10))}
                     </span>
                   </div>
                 </div>
@@ -398,13 +400,13 @@ export const ChartsTab: React.FC<ChartsTabProps> = React.memo(({
                   <div className="flex justify-between items-baseline font-mono text-xs">
                     <span className="text-gray-500 text-[10px]">Δ K Factor:</span>
                     <span className="font-bold text-gray-800">
-                      +{((calcEscenario(inputs, 10, inputs.ben_max).k - calcEscenario(inputs, 0, inputs.ben_max).k) / 10).toFixed(5)} / 1%
+                      +{((calcEscenario(inputs, 10, inputs.ben_max, plazoObra).k - calcEscenario(inputs, 0, inputs.ben_max, plazoObra).k) / 10).toFixed(5)} / 1%
                     </span>
                   </div>
                   <div className="flex justify-between items-baseline font-mono text-xs">
                     <span className="text-gray-500 text-[10px]">Δ Oferta Total:</span>
                     <span className="font-bold text-[#8C6A5A]">
-                      +{fmtLocal(((calcEscenario(inputs, 10, inputs.ben_max).pv_total - calcEscenario(inputs, 0, inputs.ben_max).pv_total) / 10))}
+                      +{fmtLocal(((calcEscenario(inputs, 10, inputs.ben_max, plazoObra).pv_total - calcEscenario(inputs, 0, inputs.ben_max, plazoObra).pv_total) / 10))}
                     </span>
                   </div>
                 </div>
@@ -451,7 +453,7 @@ export const ChartsTab: React.FC<ChartsTabProps> = React.memo(({
                             {infVal}% / mes
                           </td>
                           {[5, 10, 15, 20].map((benVal) => {
-                            const cellRes = calcEscenario(inputs, infVal, benVal);
+                            const cellRes = calcEscenario(inputs, infVal, benVal, plazoObra);
                             const isCurrentMatch = Math.abs(inputs.inf_opt - infVal) < 6 && Math.abs(inputs.ben_opt - benVal) < 4;
                             return (
                               <td

@@ -84,7 +84,44 @@ export function fmtFactor(v: number): string {
   return v.toFixed(4);
 }
 
-export function calcEscenario(d: InputsState, inf_tasa: number, ben_tasa: number): ScenarioResult {
+// --- Constantes impositivas (verificar vigencia con contador antes de cada oferta) ---
+
+// Alícuota de Ingresos Brutos para construcción en Santa Fe.
+export const ALIC_IIBB = 0.035;
+
+// Impuesto sobre Créditos y Débitos bancarios (Ley 25.413): 0,6% por acreditación.
+export const ALIC_CHEQUE = 0.006;
+
+// Supuesto de rotación bancaria del modelo original: además de acreditar la venta,
+// se estima que un 4,1% del precio antes de impuestos vuelve a rotar por cuentas
+// propias (pagos entre cuentas, reintegros). Es una estimación de gestión de caja,
+// no una alícuota legal: ajustar según la operatoria bancaria real de la empresa.
+export const COEF_ROTACION_BANCARIA = 0.041;
+
+// Alícuota general de IVA para obra vial sobre inmueble de terceros.
+export const ALIC_IVA = 0.21;
+
+// Plazo de referencia si el llamador no lo indica.
+export const PLAZO_DEFAULT_MESES = 12;
+
+/**
+ * Calcula un escenario completo de oferta.
+ *
+ * Modelo financiero: `t_fin` se interpreta como TASA MENSUAL de descubierto.
+ * Con curva de certificación lineal, la exposición promedio del capital es la
+ * mitad del plazo, por lo que el costo financiero compone la tasa mensual
+ * durante `plazo/2` meses sobre la base neta del acopio.
+ *
+ * IIBB grava el precio facturado (que incluye al propio impuesto), por lo que
+ * se aplica gross-up: iibb = (sub13 + cheque) × t / (1 − t), de modo que
+ * iibb = 3,5% exacto del precio de venta neto de IVA.
+ */
+export function calcEscenario(
+  d: InputsState,
+  inf_tasa: number,
+  ben_tasa: number,
+  plazoMeses: number = PLAZO_DEFAULT_MESES
+): ScenarioResult {
   const cd = d.base_cd;
   const anticipo_valor = d.base_cant_ant * d.base_p_h30;
   const fc = d.factor_contingencia !== undefined ? d.factor_contingencia : 1.0;
@@ -95,26 +132,30 @@ export function calcEscenario(d: InputsState, inf_tasa: number, ben_tasa: number
   const sel = cd * (d.t_sel / 100) * fc;
   const apo = cd * (d.t_apo / 100) * fc;
   const imp = (cd + ci) * (d.t_imp / 100) * fc;
-  
+
   const sub5 = cd + ci + seg + gar + sel + apo + imp;
   const infl = sub5 * (inf_tasa / 100);
   const gg = (sub5 + infl) * (d.t_gg / 100) * fc;
-  
+
   const c_total = sub5 + infl + gg;
-  
-  // Mitigación del Costo Financiero por la inyección líquida del Anticipo
+
+  // Mitigación del Costo Financiero por la inyección líquida del Anticipo.
+  // Interés mensual compuesto sobre la exposición promedio (plazo/2).
   const base_financiera = Math.max(0, c_total - anticipo_valor);
-  const fin = base_financiera * (d.t_fin / 100);
-  
+  const mesesExposicion = Math.max(0, plazoMeses) / 2;
+  const factor_fin = Math.pow(1 + d.t_fin / 100, mesesExposicion) - 1;
+  const fin = base_financiera * factor_fin;
+
   const sub11 = c_total + fin;
   const ben = sub11 * (ben_tasa / 100);
   const sub13 = sub11 + ben;
-  
-  const iibb = sub13 * 0.035;
-  const cheque = 0.006 * (c_total + (sub13 * 0.041));
-  
+
+  const cheque = ALIC_CHEQUE * (c_total + (sub13 * COEF_ROTACION_BANCARIA));
+  // Gross-up de IIBB: el impuesto integra su propia base imponible.
+  const iibb = (sub13 + cheque) * (ALIC_IIBB / (1 - ALIC_IIBB));
+
   const pv_neto = sub13 + iibb + cheque;
-  const iva = sub13 * 0.21;
+  const iva = sub13 * ALIC_IVA;
   const pv_total = pv_neto + iva;
   const k = pv_total / cd;
 

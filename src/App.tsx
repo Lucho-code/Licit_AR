@@ -5,8 +5,6 @@
 
 import React, { useState, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import ExcelJS from 'exceljs';
-import { jsPDF } from 'jspdf';
 import {
   Calculator,
   ShieldAlert,
@@ -167,7 +165,7 @@ export default function App() {
 
   const handleSaveSimulation = useCallback((name: string) => {
     if (!name.trim()) return;
-    const optResult = calcEscenario(inputs, inputs.inf_opt, inputs.ben_opt);
+    const optResult = calcEscenario(inputs, inputs.inf_opt, inputs.ben_opt, plazoObra);
     const newSim = {
       id: Math.random().toString(36).substring(2, 11),
       name: name.trim(),
@@ -225,7 +223,7 @@ export default function App() {
     "Subiendo documentación técnica de obra...",
     "Gemini analizando el presupuesto y pliego contractual...",
     "Correlacionando coeficientes bajo la Ley de Obras de Santa Fe...",
-    "Verificando consistencia del índice polinómico K..."
+    "Verificando consistencia del coeficiente resumen K..."
   ];
 
   // Effect to rotate loading steps during analysis
@@ -364,11 +362,11 @@ export default function App() {
   // Calcs
   const results = useMemo(() => {
     return {
-      min: calcEscenario(inputs, inputs.inf_min, inputs.ben_min),
-      opt: calcEscenario(inputs, inputs.inf_opt, inputs.ben_opt),
-      max: calcEscenario(inputs, inputs.inf_max, inputs.ben_max),
+      min: calcEscenario(inputs, inputs.inf_min, inputs.ben_min, plazoObra),
+      opt: calcEscenario(inputs, inputs.inf_opt, inputs.ben_opt, plazoObra),
+      max: calcEscenario(inputs, inputs.inf_max, inputs.ben_max, plazoObra),
     };
-  }, [inputs]);
+  }, [inputs, plazoObra]);
 
   const dashboardEjecutivo = useMemo(() => {
     const kProm = (results.min.k + results.opt.k + results.max.k) / 3;
@@ -394,9 +392,9 @@ export default function App() {
     const steps = 10;
     for (let i = 0; i <= steps; i++) {
       const inflVal = (inflMaxRange / steps) * i;
-      const rMin = calcEscenario(inputs, inflVal, inputs.ben_min);
-      const rOpt = calcEscenario(inputs, inflVal, inputs.ben_opt);
-      const rMax = calcEscenario(inputs, inflVal, inputs.ben_max);
+      const rMin = calcEscenario(inputs, inflVal, inputs.ben_min, plazoObra);
+      const rOpt = calcEscenario(inputs, inflVal, inputs.ben_opt, plazoObra);
+      const rMax = calcEscenario(inputs, inflVal, inputs.ben_max, plazoObra);
       list.push({
         inflation: inflVal,
         formattedInflation: `${inflVal.toFixed(1)}%`,
@@ -409,7 +407,7 @@ export default function App() {
       });
     }
     return list;
-  }, [inputs, inflMaxRange]);
+  }, [inputs, inflMaxRange, plazoObra]);
 
   // Handle Input Changes safely
   const handleInputChange = useCallback((key: keyof InputsState, value: string) => {
@@ -555,7 +553,7 @@ export default function App() {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", "analisis_polinomico_licitacion_02_2026.csv");
+    link.setAttribute("download", "analisis_coef_resumen_licitacion_02_2026.csv");
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -586,8 +584,9 @@ export default function App() {
   // Export as formatted Excel with active functional formulas
   const handleExportExcel = async () => {
     try {
+      const ExcelJS = (await import('exceljs')).default;
       const workbook = new ExcelJS.Workbook();
-      const worksheet = workbook.addWorksheet('Simulación Polinómica');
+      const worksheet = workbook.addWorksheet('Simulación Coef. Resumen');
 
       // Configure gridlines
       worksheet.views = [{ showGridLines: true }];
@@ -673,7 +672,7 @@ export default function App() {
       addConfigRow(14, 'Aportes Profesionales de Ley (t_apo %)', inputs.t_apo / 100, '0.00%');
       addConfigRow(15, 'Imprevistos de Campo y Suelo (t_imp %)', inputs.t_imp / 100, '0.00%');
       addConfigRow(16, 'Gastos Generales de Sede (t_gg %)', inputs.t_gg / 100, '0.00%');
-      addConfigRow(17, 'Costo Financiero Neto s / scoperto (t_fin %)', inputs.t_fin / 100, '0.00%');
+      addConfigRow(17, 'Costo Financiero: tasa MENSUAL de descubierto (t_fin %)', inputs.t_fin / 100, '0.00%');
 
       // Borders to Seccion I
       for (let r = 5; r <= 17; r++) {
@@ -733,6 +732,14 @@ export default function App() {
       worksheet.getCell('E21').numFmt = '0.00';
       worksheet.getCell('E21').font = { name: 'Arial', size: 9, bold: true, color: { argb: '8C6A5A' } };
       worksheet.getCell('E21').alignment = { horizontal: 'right' };
+
+      // Row 22: Plazo de obra — drives compound financial cost (exposure = plazo/2)
+      worksheet.getCell('B22').value = 'Plazo de Obra en meses (exposición financiera = plazo/2)';
+      worksheet.getCell('B22').font = { name: 'Arial', size: 9, bold: true, color: { argb: '5A554E' } };
+      worksheet.getCell('C22').value = plazoObra;
+      worksheet.getCell('C22').numFmt = '#,##0';
+      worksheet.getCell('C22').font = { name: 'Arial', size: 9, bold: true };
+      worksheet.getCell('C22').alignment = { horizontal: 'right' };
 
       // Budget Table Headers
       worksheet.getCell('B23').value = 'CONCEPTO VIAL DE COSTO / IMPUESTO';
@@ -803,10 +810,10 @@ export default function App() {
       worksheet.getCell('D34').value = { formula: 'D31+D32+D33' };
       worksheet.getCell('E34').value = { formula: 'E31+E32+E33' };
 
-      worksheet.getCell('B35').value = '10. COSTO FINANCIERO (Neto s / Descubierto)';
-      worksheet.getCell('C35').value = { formula: 'MAX(0, C34-C$9)*C$17' };
-      worksheet.getCell('D35').value = { formula: 'MAX(0, D34-C$9)*C$17' };
-      worksheet.getCell('E35').value = { formula: 'MAX(0, E34-C$9)*C$17' };
+      worksheet.getCell('B35').value = '10. COSTO FINANCIERO (interés mensual compuesto s/ plazo)';
+      worksheet.getCell('C35').value = { formula: 'MAX(0, C34-C$9)*(POWER(1+C$17,C$22/2)-1)' };
+      worksheet.getCell('D35').value = { formula: 'MAX(0, D34-C$9)*(POWER(1+C$17,C$22/2)-1)' };
+      worksheet.getCell('E35').value = { formula: 'MAX(0, E34-C$9)*(POWER(1+C$17,C$22/2)-1)' };
 
       worksheet.getCell('B36').value = '11. SUBTOTAL ANTES DE BENEFICIO';
       worksheet.getCell('C36').value = { formula: 'C34+C35' };
@@ -823,10 +830,10 @@ export default function App() {
       worksheet.getCell('D38').value = { formula: 'D36+D37' };
       worksheet.getCell('E38').value = { formula: 'E36+E37' };
 
-      worksheet.getCell('B39').value = '14. INGRESOS BRUTOS (3.5% Santa Fe)';
-      worksheet.getCell('C39').value = { formula: 'C38*0.035' };
-      worksheet.getCell('D39').value = { formula: 'D38*0.035' };
-      worksheet.getCell('E39').value = { formula: 'E38*0.035' };
+      worksheet.getCell('B39').value = '14. INGRESOS BRUTOS (3.5% Santa Fe, c/ gross-up)';
+      worksheet.getCell('C39').value = { formula: '(C38+C40)*(0.035/(1-0.035))' };
+      worksheet.getCell('D39').value = { formula: '(D38+D40)*(0.035/(1-0.035))' };
+      worksheet.getCell('E39').value = { formula: '(E38+E40)*(0.035/(1-0.035))' };
 
       worksheet.getCell('B40').value = '15. IMPUESTO AL CHEQUE (Créd./Déb.)';
       worksheet.getCell('C40').value = { formula: '0.006*(C34+C38*0.041)' };
@@ -902,7 +909,7 @@ export default function App() {
 
       // Row 45: Factor K Final Row
       worksheet.getRow(45).height = 32;
-      worksheet.getCell('B45').value = 'FACTOR MULTIPLICADOR K (Polinómico final)';
+      worksheet.getCell('B45').value = 'FACTOR MULTIPLICADOR K (Coeficiente Resumen de Oferta)';
       worksheet.getCell('B45').font = { name: 'Arial', size: 10, bold: true, color: { argb: '3A3732' } };
       worksheet.getCell('B45').alignment = { horizontal: 'left', vertical: 'middle' };
 
@@ -932,7 +939,7 @@ export default function App() {
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
-      link.download = `analisis_polinomico_vial_santa_fe_${new Date().getFullYear()}.xlsx`;
+      link.download = `analisis_coef_resumen_vial_santa_fe_${new Date().getFullYear()}.xlsx`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -947,6 +954,7 @@ export default function App() {
   // Export as visually polished, high-fidelity PDF report
   const handleExportPDF = async () => {
     try {
+      const { jsPDF } = await import('jspdf');
       const doc = new jsPDF('p', 'mm', 'a4');
       const pageWidth = 210;
       const pageHeight = 297;
@@ -1165,7 +1173,7 @@ export default function App() {
       doc.setTextColor(255, 255, 255);
       doc.setFont('Helvetica', 'bold');
       doc.setFontSize(9);
-      doc.text('FACTOR MULTIPLICADOR K (Coeficiente Oficial de Redeterminación)', colPositions[0] + 3, yPos + 5.2);
+      doc.text('FACTOR MULTIPLICADOR K (Coeficiente Resumen de Oferta = PV/CD)', colPositions[0] + 3, yPos + 5.2);
 
       doc.text(fmtFactor(results.min.k), colPositions[1] + colWidths[1] - 3, yPos + 5.2, { align: 'right' });
       doc.text(fmtFactor(results.opt.k), colPositions[2] + colWidths[2] - 3, yPos + 5.2, { align: 'right' });
@@ -1296,7 +1304,7 @@ export default function App() {
       doc.setFont('Helvetica', 'bold');
       doc.setFontSize(10);
       doc.setTextColor(rgbPrimary[0], rgbPrimary[1], rgbPrimary[2]);
-      doc.text('IV. CONCLUSIONES DEL ANÁLISIS POLINÓMICO Y GESTIÓN DE RIESGOS', margin, yPos);
+      doc.text('IV. CONCLUSIONES DEL ANÁLISIS DEL COEFICIENTE RESUMEN Y GESTIÓN DE RIESGOS', margin, yPos);
       yPos += 4;
 
       // Draw bounding box for conclusions
@@ -1310,7 +1318,7 @@ export default function App() {
       doc.setFont('Helvetica', 'normal');
       doc.setFontSize(8.5);
 
-      const introText = "El cálculo del coeficiente multiplicador polinómico K se fundamenta en la legislación de obra gubernamental de la Provincia de Santa Fe. Los tres escenarios simulados proveen un espectro estratégico clave para los tomadores de decisiones antes de proceder al sellado contractual y la apertura del pliego:";
+      const introText = "El coeficiente resumen K expresa la relación entre el precio total de oferta y el costo directo (K = PV/CD), integrando indirectos, financieros, beneficio e impuestos según práctica de obra pública de la Provincia de Santa Fe. No debe confundirse con la fórmula polinómica de redeterminación de precios (índices INDEC). Los tres escenarios simulados proveen un espectro estratégico clave para los tomadores de decisiones antes de proceder al sellado contractual y la apertura del pliego:";
       const introLines = doc.splitTextToSize(introText, contentWidth - 10);
       doc.text(introLines, margin + 5, yPos + 6);
 
@@ -1364,7 +1372,7 @@ export default function App() {
       doc.text('Aprobación presupuestaria contractual', margin + contentWidth - 15 - (signW / 2), yPos + 26, { align: 'center' });
 
       // Save the document!
-      doc.save(`informe_ejecutivo_polinomico_santa_fe_${new Date().getFullYear()}.pdf`);
+      doc.save(`informe_ejecutivo_coef_resumen_santa_fe_${new Date().getFullYear()}.pdf`);
       setExportSuccess(true);
       setTimeout(() => setExportSuccess(false), 3000);
     } catch (e) {
@@ -1675,7 +1683,7 @@ export default function App() {
               <div className="flex items-center gap-3">
                 <CheckCircle className="h-5 w-5 text-emerald-600 flex-shrink-0" />
                 <div>
-                  <span className="font-semibold">¡Exportación Exitosa!</span> Descarga efectuada correctamente con el esquema polinómico actualizado en base a los coeficientes ingresados.
+                  <span className="font-semibold">¡Exportación Exitosa!</span> Descarga efectuada correctamente con el esquema de cálculo actualizado en base a los coeficientes ingresados.
                 </div>
               </div>
               <button onClick={() => setExportSuccess(false)} className="text-emerald-500 hover:text-emerald-700 font-semibold text-xs uppercase px-2 py-1">Descartar</button>
@@ -2010,7 +2018,7 @@ export default function App() {
                   </div>
 
                   <p className="text-[11px] text-[#A4947E] italic">
-                    * Los valores anteriores han reemplazado automáticamente los controles del simulador. Modifique libremente las márgenes de inflación o los beneficios para continuar ajustando su oferta polinómica.
+                    * Los valores anteriores han reemplazado automáticamente los controles del simulador. Modifique libremente los márgenes de inflación o los beneficios para continuar ajustando su oferta.
                   </p>
                 </div>
               </motion.div>
@@ -2236,7 +2244,7 @@ export default function App() {
                   </div>
 
                   <div className="space-y-1">
-                    <label htmlFor="t_fin" className="block text-[10px] font-bold text-[#3A3732] uppercase tracking-wide">CF Neto S/ Descubierto</label>
+                    <label htmlFor="t_fin" className="block text-[10px] font-bold text-[#3A3732] uppercase tracking-wide">CF Mensual s/ Descubierto (% por mes)</label>
                     <div className="relative">
                       <input
                         id="t_fin"
@@ -2417,7 +2425,7 @@ export default function App() {
                 <div>
                   <h4 className="font-bold text-red-800">Valores de Escenario Inválidos</h4>
                   <p className="mt-0.5 text-red-700 leading-relaxed font-normal">
-                    Se han ingresado porcentajes negativos en los parámetros específicos por escenario en el panel izquierdo. Corrija los valores para normalizar los cálculos polinómicos y restablecer la exactitud de la oferta licitatoria.
+                    Se han ingresado porcentajes negativos en los parámetros específicos por escenario en el panel izquierdo. Corrija los valores para normalizar los cálculos y restablecer la exactitud de la oferta licitatoria.
                   </p>
                 </div>
               </motion.div>
@@ -2590,6 +2598,7 @@ export default function App() {
                     setSensitivityMetric={setSensitivityMetric}
                     inflMaxRange={inflMaxRange}
                     setInflMaxRange={setInflMaxRange}
+                    plazoObra={plazoObra}
                   />
                 )}
 
@@ -2598,6 +2607,7 @@ export default function App() {
                   <FormulasTab
                     inputs={inputs}
                     results={results}
+                    plazoObra={plazoObra}
                   />
                 )}
 
@@ -2684,7 +2694,7 @@ export default function App() {
       <footer className="bg-[#3A3732] text-[#C7BDB3] text-xs py-8 mt-16 border-t border-[#2D2A26]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center space-y-3">
           <p className="font-medium font-display italic text-[#EBE7DF]">
-            Calculadora Vial Multiescenario para Análisis Polinómico • Licitación de Obra Pública Vial
+            Calculadora Vial Multiescenario — Coeficiente Resumen de Oferta (K) • Licitación de Obra Pública Vial
           </p>
           <div className="flex justify-center items-center gap-2 text-[#A4947E] flex-wrap text-[11px]">
             <span>Amortización de Equipos Propios</span>
