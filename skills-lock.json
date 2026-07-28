@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "market-research": {
+      "source": "affaan-m/everything-claude-code",
+      "sourceType": "github",
+      "skillPath": "skills/market-research/SKILL.md",
+      "computedHash": "9c2f1153dcceb70df1c8e99603ab7d972a67ffe0cc4d1653fb420af0dc904a25"
+    }
+  }
+}
