@@ -186,6 +186,119 @@ Construye una justificación excelente ('explanation') explicando técnicamente 
   }
 });
 
+// Endpoint to analyze offers document (PDF, Excel, images)
+app.post("/api/analyze-offers", async (req, res) => {
+  try {
+    const { fileData, fileType } = req.body;
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({
+        error: "GEMINI_API_KEY no configurado en los Secretos. Por favor, agregue la clave."
+      });
+    }
+
+    if (!fileData || !fileType) {
+      return res.status(400).json({
+        error: "Debe proporcionar los datos del archivo.",
+      });
+    }
+
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          "User-Agent": "aistudio-build",
+        },
+      },
+    });
+
+    const contentsParts = [];
+    const base64CleanData = fileData.includes(";base64,")
+      ? fileData.split(";base64,")[1]
+      : fileData;
+      
+    contentsParts.push({
+      inlineData: {
+        mimeType: fileType,
+        data: base64CleanData,
+      },
+    });
+
+    contentsParts.push({
+      text: `Analiza este documento que contiene ofertas de distintos proveedores o subcontratistas. Extrae los ítems (insumos/rubros) cotizados y los precios unitarios que ofreció cada proveedor. Estructura el resultado para devolver una lista de ítems (con nombre, cantidad y unidad) y una lista de ofertas (con el nombre del oferente y el precio para cada ítem).
+      
+El esquema esperado es un objeto con dos arreglos:
+1. items: [{ id: "i1", name: "Nombre del insumo", quantity: 100, unit: "m3" }]
+2. offers: [{ offerorId: "o1", offerorName: "Nombre de la Empresa", prices: { "i1": 15000, "i2": 2500 } }]
+
+Es muy importante que las keys en el diccionario de 'prices' coincidan exactamente con el 'id' asignado al ítem correspondiente.`,
+    });
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: { parts: contentsParts },
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            items: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  id: { type: Type.STRING },
+                  name: { type: Type.STRING },
+                  quantity: { type: Type.NUMBER },
+                  unit: { type: Type.STRING }
+                },
+                required: ["id", "name", "quantity", "unit"]
+              }
+            },
+            offers: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  offerorId: { type: Type.STRING },
+                  offerorName: { type: Type.STRING },
+                  prices: {
+                    type: Type.OBJECT,
+                    description: "Diccionario con llave igual al id del item y valor numérico igual al precio unitario ofertado",
+                  }
+                },
+                required: ["offerorId", "offerorName", "prices"]
+              }
+            }
+          },
+          required: ["items", "offers"]
+        }
+      }
+    });
+
+    let parsedData: any = {};
+    const rawText = response.text || "";
+    try {
+      const cleanJson = rawText.trim().replace(/^```json\s*/i, "").replace(/```\s*$/, "").trim();
+      parsedData = JSON.parse(cleanJson || "{}");
+    } catch (err) {
+      console.error("Error al deserializar JSON de Gemini:", rawText, err);
+      return res.status(500).json({
+        error: "Estructura inesperada en la respuesta de Gemini."
+      });
+    }
+    
+    return res.json({ success: true, ...parsedData });
+
+  } catch (error: any) {
+    console.error("Error al analizar las ofertas:", error);
+    return res.status(500).json({
+      error: "Error al analizar el archivo de ofertas. " + (error.message || ""),
+    });
+  }
+});
+
 // Configure Vite in development, serve static files in production
 async function configureServer() {
   if (process.env.NODE_ENV !== "production") {

@@ -64,13 +64,14 @@ import { ChartsTab } from './components/ChartsTab';
 import { FormulasTab } from './components/FormulasTab';
 import { GanttTab } from './components/GanttTab';
 import { RiesgosTab } from './components/RiesgosTab';
+import { OfertasTab } from './components/OfertasTab';
 
 export default function App() {
   const [inputs, setInputs] = useState<InputsState>(DEFAULT_INPUTS);
   const [selectedScenario, setSelectedScenario] = useState<'min' | 'opt' | 'max'>('opt');
   const [searchQuery, setSearchQuery] = useState('');
   const [inspectedRow, setInspectedRow] = useState<RowMeta | null>(FILAS_ESTRUCTURA[19]); // Defecto en el total
-  const [activeTab, setActiveTab] = useState<'table' | 'charts' | 'formulas' | 'gantt' | 'riesgos'>('table');
+  const [activeTab, setActiveTab] = useState<'table' | 'charts' | 'formulas' | 'gantt' | 'riesgos' | 'ofertas'>('table');
   const [exportSuccess, setExportSuccess] = useState(false);
   const [licitacionInfo, setLicitacionInfo] = useState<string>(
     "Licitación Vial Pública 02/2026 — Provincia de Santa Fe, Argentina. Obra: Repavimentación e Infraestructura de Corredores Primarios. Pliego contractual: acopio preventivo de Hormigón H-30."
@@ -2563,6 +2564,18 @@ export default function App() {
                   <ShieldAlert className="h-4 w-4 text-[#5A716E]" />
                   Matriz de Riesgo
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('ofertas')}
+                  className={`flex-1 min-w-[120px] inline-flex items-center justify-center gap-2 py-2 px-3.5 rounded-xl font-bold uppercase tracking-wider text-[10px] transition-all focus:outline-none cursor-pointer ${
+                    activeTab === 'ofertas'
+                      ? 'bg-white text-[#2D2A26] shadow-xs'
+                      : 'text-[#7A746B] hover:text-[#2D2A26]'
+                  }`}
+                >
+                  <Database className="h-4 w-4 text-[#5A716E]" />
+                  Ofertas Recibidas
+                </button>
               </div>
 
               <div className="p-4 sm:p-6">
@@ -2631,6 +2644,11 @@ export default function App() {
                     inputs={inputs}
                     setInputs={setInputs}
                   />
+                )}
+
+                {/* TAB 6: OFERTAS */}
+                {activeTab === 'ofertas' && (
+                  <OfertasTab />
                 )}
 
               </div>

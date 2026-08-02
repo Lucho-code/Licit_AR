@@ -121,6 +121,7 @@ export function calcEscenario(d: InputsState, inf_tasa: number, ben_tasa: number
   return { cd, ci, seg, gar, sel, apo, imp, sub5, infl, gg, c_total, fin, sub11, ben, sub13, iibb, cheque, pv_neto, iva, pv_total, k };
 }
 
+
 export const FILAS_ESTRUCTURA: RowMeta[] = [
   {
     key: 'cd',
