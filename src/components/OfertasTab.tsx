@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Download, Plus, Trash2, Edit2, CheckCircle, TrendingDown, FileSpreadsheet, Scale, Save, X, UploadCloud, Loader2, AlertCircle } from 'lucide-react';
+import { Download, Plus, Trash2, Edit2, CheckCircle, TrendingDown, FileSpreadsheet, Scale, Save, X, UploadCloud, Loader2, AlertCircle, Cloud } from 'lucide-react';
 import { fmtLocal } from '../utils';
 import ExcelJS from 'exceljs';
+import { useAuth } from '../AuthContext';
 
 export interface Item {
   id: string;
@@ -32,6 +33,9 @@ export function OfertasTab() {
 
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
+
+  const { accessToken } = useAuth();
+  const [isExportingSheets, setIsExportingSheets] = useState(false);
 
   // Load from local storage
   useEffect(() => {
@@ -232,6 +236,94 @@ export function OfertasTab() {
     URL.revokeObjectURL(url);
   };
 
+  const handleExportToSheets = async () => {
+    if (!accessToken) {
+      alert("Debes iniciar sesión con Google para exportar a Sheets.");
+      return;
+    }
+    
+    setIsExportingSheets(true);
+    setAnalyzeError(null);
+    try {
+      // 1. Create Spreadsheet
+      const createResponse = await fetch('https://sheets.googleapis.com/v4/spreadsheets', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          properties: { title: `Comparativa de Ofertas - ${new Date().toLocaleDateString()}` }
+        })
+      });
+      if (!createResponse.ok) throw new Error("Error creando Google Sheet");
+      const spreadsheet = await createResponse.json();
+      const spreadsheetId = spreadsheet.spreadsheetId;
+
+      // 2. Prepare Data
+      const headers = ['Ítem', 'Unidad', 'Cantidad'];
+      offers.forEach(o => {
+        headers.push(`P.Unit - ${o.offerorName}`);
+        headers.push(`Subtotal - ${o.offerorName}`);
+      });
+      headers.push('Oferta Ideal (Mejor P.Unit)', 'Subtotal Ideal');
+
+      const values = [headers];
+      
+      let totals = offers.map(() => 0);
+      let totalIdeal = 0;
+
+      items.forEach(item => {
+        const row: any[] = [item.name, item.unit, item.quantity];
+        const best = bestPrices[item.id];
+
+        offers.forEach((offer, idx) => {
+          const pUnit = offer.prices[item.id] || 0;
+          const subtotal = pUnit * item.quantity;
+          totals[idx] += subtotal;
+          row.push(pUnit, subtotal);
+        });
+
+        if (best) {
+          row.push(best.price);
+          const sub = best.price * item.quantity;
+          totalIdeal += sub;
+          row.push(sub);
+        } else {
+          row.push(0, 0);
+        }
+        values.push(row);
+      });
+
+      // Totals
+      const totalsRow: any[] = ['TOTALES', '', ''];
+      offers.forEach((_, idx) => {
+        totalsRow.push('', totals[idx]);
+      });
+      totalsRow.push('', totalIdeal);
+      values.push(totalsRow);
+
+      // 3. Update Sheet
+      const updateResponse = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!A1?valueInputOption=USER_ENTERED`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ values })
+      });
+      
+      if (!updateResponse.ok) throw new Error("Error subiendo datos a Google Sheets");
+      
+      window.open(`https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`, '_blank');
+      
+    } catch (err: any) {
+      setAnalyzeError(err.message || "Error al exportar a Google Sheets");
+    } finally {
+      setIsExportingSheets(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-start">
@@ -264,11 +356,24 @@ export function OfertasTab() {
             </button>
           </div>
           <button
+            onClick={handleExportToSheets}
+            disabled={isExportingSheets || !accessToken}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold shadow transition-colors ${
+              isExportingSheets || !accessToken 
+                ? 'bg-[#D9D2C5] text-[#7A746B] cursor-not-allowed' 
+                : 'bg-[#107C41] hover:bg-[#0C6334] text-white'
+            }`}
+          >
+            {isExportingSheets ? <Loader2 className="h-4 w-4 animate-spin" /> : <Cloud className="h-4 w-4" />}
+            Exportar a Sheets
+          </button>
+          
+          <button
             onClick={handleExport}
             className="flex items-center gap-2 bg-[#5A716E] hover:bg-[#485B58] text-white px-4 py-2 rounded-xl text-sm font-bold shadow transition-colors"
           >
             <FileSpreadsheet className="h-4 w-4" />
-            Exportar
+            Excel
           </button>
         </div>
       </div>

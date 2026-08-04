@@ -1,0 +1,42 @@
+{
+  "entities": {
+    "Simulation": {
+      "title": "Simulation",
+      "description": "A saved simulation for a roadwork project.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "date": { "type": "string" },
+        "userId": { "type": "string" },
+        "inputs": { "type": "object" },
+        "licitacionInfo": { "type": "string" },
+        "plazoObra": { "type": "number" },
+        "kFactorOpt": { "type": "number" },
+        "ofertaOpt": { "type": "number" }
+      },
+      "required": ["id", "name", "userId", "inputs"]
+    },
+    "OffersState": {
+      "title": "Offers State",
+      "description": "Saved items and offers for a user.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "items": { "type": "array" },
+        "offers": { "type": "array" }
+      },
+      "required": ["userId", "items", "offers"]
+    }
+  },
+  "firestore": {
+    "simulations/{simulationId}": {
+      "schema": { "$ref": "#/entities/Simulation" },
+      "description": "Saved simulations by users."
+    },
+    "offers/{userId}": {
+      "schema": { "$ref": "#/entities/OffersState" },
+      "description": "Saved items and offers by users."
+    }
+  }
+}

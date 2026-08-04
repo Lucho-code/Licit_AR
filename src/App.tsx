@@ -29,7 +29,11 @@ import {
   Sparkles,
   Brain,
   Calendar,
-  Layers
+  Layers,
+  LogOut,
+  LogIn,
+  User as UserIcon,
+  Cloud
 } from 'lucide-react';
 import {
   BarChart as ReBarChart,
@@ -66,7 +70,11 @@ import { GanttTab } from './components/GanttTab';
 import { RiesgosTab } from './components/RiesgosTab';
 import { OfertasTab } from './components/OfertasTab';
 
+import { useAuth } from './AuthContext';
+
 export default function App() {
+  const { user, accessToken, signIn, logOut, loading } = useAuth();
+
   const [inputs, setInputs] = useState<InputsState>(DEFAULT_INPUTS);
   const [selectedScenario, setSelectedScenario] = useState<'min' | 'opt' | 'max'>('opt');
   const [searchQuery, setSearchQuery] = useState('');
@@ -583,6 +591,46 @@ export default function App() {
     setExportSuccess(true);
     setTimeout(() => setExportSuccess(false), 3000);
   }, [inputs, results]);
+
+  // Export to Google Drive
+  const handleExportToGoogleDrive = async () => {
+    if (!accessToken) {
+      alert("Debes iniciar sesión con Google para usar Drive.");
+      return;
+    }
+    try {
+      const fileContent = JSON.stringify({
+        inputs,
+        results,
+        timestamp: new Date().toISOString()
+      }, null, 2);
+
+      const metadata = {
+        name: `Simulacion_Vial_${new Date().toISOString().slice(0, 10)}.json`,
+        mimeType: 'application/json'
+      };
+
+      const formData = new FormData();
+      formData.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+      formData.append('file', new Blob([fileContent], { type: 'application/json' }));
+
+      const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        },
+        body: formData
+      });
+
+      if (!response.ok) throw new Error("Error al subir a Drive");
+      
+      setExportSuccess(true);
+      setTimeout(() => setExportSuccess(false), 3000);
+    } catch (error) {
+      console.error(error);
+      alert("Error al exportar a Google Drive.");
+    }
+  };
 
   // Export as formatted Excel with active functional formulas
   const handleExportExcel = async () => {
@@ -1533,9 +1581,39 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8 relative z-10">
           <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-6">
             <div className="space-y-3 flex-1 w-full">
-              <h1 className="text-3xl sm:text-4xl font-bold font-display italic tracking-tight text-[#3A3732] mb-1">
-                Calculadora Vial Multiescenario
-              </h1>
+              <div className="flex items-center justify-between">
+                <h1 className="text-3xl sm:text-4xl font-bold font-display italic tracking-tight text-[#3A3732] mb-1">
+                  Calculadora Vial Multiescenario
+                </h1>
+                
+                <div className="flex items-center gap-2">
+                  {!loading && (
+                    user ? (
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm font-medium text-[#5A554E] flex items-center gap-1">
+                          <UserIcon className="h-4 w-4" />
+                          {user.displayName || user.email}
+                        </span>
+                        <button
+                          onClick={logOut}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-[#EBE7DF] hover:bg-[#D9D2C5] text-[#3A3732] rounded-lg text-xs font-bold transition-colors"
+                        >
+                          <LogOut className="h-3.5 w-3.5" />
+                          Cerrar Sesión
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={signIn}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-[#5A716E] hover:bg-[#485B58] text-white rounded-lg text-xs font-bold shadow-sm transition-colors"
+                      >
+                        <LogIn className="h-3.5 w-3.5" />
+                        Iniciar Sesión
+                      </button>
+                    )
+                  )}
+                </div>
+              </div>
               <div className="space-y-1 w-full">
                 <label htmlFor="licitacion-info-textarea" className="block text-[10px] font-bold uppercase tracking-wider text-[#71715A] flex items-center gap-1.5">
                   <span className="h-1.5 w-1.5 rounded-full bg-[#5A716E]"></span>
@@ -2689,6 +2767,19 @@ export default function App() {
                 >
                   <Download className="h-4 w-4" />
                   Descargar JSON
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportToGoogleDrive}
+                  disabled={!accessToken}
+                  className={`flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                    !accessToken 
+                      ? 'bg-[#D9D2C5] text-[#7A746B] cursor-not-allowed' 
+                      : 'bg-[#1A73E8] hover:bg-[#1557B0] text-white shadow-md'
+                  }`}
+                >
+                  <Cloud className="h-4 w-4" />
+                  Guardar en Drive
                 </button>
               </div>
             </div>
