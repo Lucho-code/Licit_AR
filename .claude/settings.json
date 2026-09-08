@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "tododeia": {
+      "source": {
+        "source": "github",
+        "repo": "Hainrixz/agente-pagokit"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "pagokit@tododeia": true
+  }
+}
