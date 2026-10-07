@@ -31,6 +31,7 @@ createServer((req, res) => {
   try {
     stat = statSync(file);
     if (stat.isDirectory()) {
+      if (process.env.SERVE_NO_INDEX) throw new Error('sin índice');
       file = path.join(file, 'index.html');
       stat = statSync(file);
     }

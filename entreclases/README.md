@@ -50,6 +50,23 @@ Agregando `?demo` a la dirección se fuerza el modo demo aunque haya Firebase co
 
 ---
 
+## Probarla en el celular
+
+Abrí este enlace en el teléfono, con Chrome en Android o Safari en iPhone:
+
+**https://raw.githack.com/Lucho-code/Licit_AR/ccr-f0652fc3-illpha/entreclases/movil/index.html**
+
+- Es la app completa en **modo demo**: lo que hagas queda guardado solo en ese teléfono.
+- La cámara funciona (espejo y grabación). Cuando el teléfono pida permiso, aceptalo.
+- Para instalarla:
+  - Android: menú ⋮ → **Agregar a la pantalla principal**.
+  - iPhone: botón Compartir → **Agregar a inicio**.
+- Una vez abierta, funciona sin conexión.
+
+La carpeta `movil/` es una copia compilada que publica GitHub a través de raw.githack.com. Se regenera con `npm run build:movil` y se prueba con `npm run test:movil` (emula un Pixel 7). Si el PR se une a `main`, el enlace pasa a usar `main` en lugar del nombre de la rama.
+
+---
+
 ## Probarla en la computadora
 
 Requisitos: [Node.js](https://nodejs.org) 20 o más reciente.
@@ -151,6 +168,7 @@ entreclases/
 | `npm run dev` | Servidor de desarrollo con recompilación |
 | `npm run build` | Genera `dist/` para publicar |
 | `npm run build:preview` | Genera la vista previa de un solo archivo (modo demo) |
+| `npm run build:movil` / `npm run test:movil` | Genera y prueba la versión para el celular (carpeta `movil/`) |
 | `npm test` | Pruebas de la lógica |
 | `npm run test:e2e` | Recorridos completos en Chromium con cámara simulada (modo demo) |
 | `npm run test:firebase` | Reglas de seguridad y recorrido completo contra los emuladores de Firebase (requiere Java 11 o más reciente) |

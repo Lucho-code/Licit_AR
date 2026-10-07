@@ -14,7 +14,9 @@
     "test:firebase": "node build.mjs && firebase emulators:exec --project demo-entreclases --only auth,firestore,storage \"node --test test/rules/*.test.mjs && playwright test --project=firebase\"",
     "emulators": "firebase emulators:start --project demo-entreclases --only auth,firestore,storage",
     "deploy": "node build.mjs && firebase deploy",
-    "icons": "node scripts/icons.mjs"
+    "icons": "node scripts/icons.mjs",
+    "build:movil": "node build.mjs --movil",
+    "test:movil": "node build.mjs --movil && playwright test --project=movil"
   },
   "dependencies": {
     "firebase": "12.19.0",

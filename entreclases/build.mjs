@@ -2,6 +2,8 @@
 //   node build.mjs            → dist/ (app web instalable, lista para publicar)
 //   node build.mjs --serve    → dist/ + servidor local con recompilación en http://localhost:5173
 //   node build.mjs --preview  → dist-preview/entreclases.html (vista previa de un solo archivo, modo demo)
+//   node build.mjs --movil    → movil/ (versión de prueba para el celular: modo demo, sin Firebase,
+//                               lista para servirse desde cualquier carpeta por https)
 import * as esbuild from 'esbuild';
 import { cp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -11,6 +13,7 @@ const root = path.dirname(fileURLToPath(import.meta.url));
 const args = new Set(process.argv.slice(2));
 const SERVE = args.has('--serve');
 const PREVIEW = args.has('--preview');
+const MOVIL = args.has('--movil');
 const BUILD_ID = Date.now().toString(36);
 
 const FONTS_HREF =
@@ -26,7 +29,7 @@ async function listFiles(dir, base = dir) {
   return out;
 }
 
-function pwaOptions(outdir, dev) {
+function pwaOptions(outdir, dev, { plugins = [], sourcemap = true } = {}) {
   return {
     entryPoints: { app: path.join(root, 'src/main.js') },
     bundle: true,
@@ -37,7 +40,8 @@ function pwaOptions(outdir, dev) {
     chunkNames: 'chunks/[name]-[hash]',
     minify: !dev,
     charset: 'ascii',
-    sourcemap: true,
+    sourcemap,
+    plugins,
     target: ['es2020', 'chrome80', 'safari15'],
     define: {
       __PREVIEW__: 'false',
@@ -53,7 +57,6 @@ async function finishPwa(outdir) {
   // Los videos y el módulo de Firebase se guardan en caché la primera vez que se usan.
   const files = await listFiles(outdir);
   const precache = [
-    './',
     'index.html',
     `app.js?v=${BUILD_ID}`,
     `app.css?v=${BUILD_ID}`,
@@ -62,8 +65,9 @@ async function finishPwa(outdir) {
     ...files.filter((f) => f.startsWith('icons/')),
   ];
   const sw = (await readFile(path.join(outdir, 'sw.js'), 'utf8'))
-    .replace('__BUILD_ID__', BUILD_ID)
-    .replace('__PRECACHE__', JSON.stringify(precache));
+    .replaceAll('__BUILD_ID__', BUILD_ID)
+    .replaceAll('__PRECACHE__', JSON.stringify(precache));
+  if (sw.includes('__')) throw new Error('sw.js quedó con marcadores sin reemplazar');
   await writeFile(path.join(outdir, 'sw.js'), sw);
   const html = (await readFile(path.join(outdir, 'index.html'), 'utf8'))
     .replaceAll('__BUILD_ID__', BUILD_ID)
@@ -90,6 +94,31 @@ async function serve() {
   await ctx.watch();
   const { port } = await ctx.serve({ servedir: outdir, port: 5173, host: '127.0.0.1' });
   console.log(`\nEntreclases en http://localhost:${port}  (Ctrl+C para cortar)`);
+}
+
+// Versión para el celular: la misma app instalable, siempre en modo demo y sin el módulo de Firebase.
+const withoutFirebase = {
+  name: 'sin-firebase',
+  setup(build) {
+    build.onResolve({ filter: /firebase-store\.js$/ }, () => ({
+      path: path.join(root, 'src/data/firebase-store.stub.js'),
+    }));
+  },
+};
+
+const DEMO_CONFIG = `// Versión de prueba para el celular: siempre en modo demo.
+// Todo lo que se haga queda guardado solo en ese teléfono.
+window.ENTRECLASES_CONFIG = { firebase: null, useEmulators: false };
+`;
+
+async function buildMovil() {
+  const outdir = path.join(root, 'movil');
+  await rm(outdir, { recursive: true, force: true });
+  await cp(path.join(root, 'public'), outdir, { recursive: true });
+  await writeFile(path.join(outdir, 'config.js'), DEMO_CONFIG);
+  await esbuild.build(pwaOptions(outdir, false, { plugins: [withoutFirebase], sourcemap: false }));
+  await finishPwa(outdir);
+  console.log(`\nListo: movil/ (build ${BUILD_ID})`);
 }
 
 // Vista previa de un solo archivo: sin Firebase, sin service worker, videos de muestra embebidos.
@@ -148,5 +177,6 @@ async function buildPreview() {
 }
 
 if (PREVIEW) await buildPreview();
+else if (MOVIL) await buildMovil();
 else if (SERVE) await serve();
 else await buildPwa();

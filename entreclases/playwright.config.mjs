@@ -19,13 +19,22 @@ export default defineConfig({
       args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--autoplay-policy=no-user-gesture-required'],
     },
   },
-  webServer: {
-    command: 'node scripts/serve.mjs 4173',
-    url: 'http://127.0.0.1:4173/index.html',
-    reuseExistingServer: true,
-  },
+  webServer: [
+    {
+      command: 'node scripts/serve.mjs 4173',
+      url: 'http://127.0.0.1:4173/index.html',
+      reuseExistingServer: true,
+    },
+    {
+      command: 'node scripts/serve.mjs 4174',
+      url: 'http://127.0.0.1:4174/index.html',
+      reuseExistingServer: true,
+      env: { SERVE_DIR: 'movil', SERVE_NO_INDEX: '1' },
+    },
+  ],
   projects: [
     { name: 'demo', testMatch: /demo\.spec\.mjs/ },
     { name: 'firebase', testMatch: /firebase\.spec\.mjs/ },
+    { name: 'movil', testMatch: /movil\.spec\.mjs/, use: { baseURL: 'http://127.0.0.1:4174' } },
   ],
 });

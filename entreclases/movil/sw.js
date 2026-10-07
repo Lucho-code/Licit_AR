@@ -1,7 +1,7 @@
 // Service worker de Entreclases: deja la app disponible sin conexión.
 // El build completa el identificador de versión y la lista de archivos a precargar.
-const CACHE = 'entreclases-__BUILD_ID__';
-const PRECACHE = __PRECACHE__;
+const CACHE = 'entreclases-muykxb5h';
+const PRECACHE = ["index.html","app.js?v=muykxb5h","app.css?v=muykxb5h","config.js","manifest.webmanifest","icons/icon-192.png","icons/icon-512.png","icons/icon-maskable-512.png"];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
