@@ -1,0 +1,130 @@
+rules_version = '2';
+
+// Reglas de Entreclases.
+//  · Docentes (cuenta de Google verificada) que figuran en courses/{id}/staff/{email}: todo el curso.
+//  · Alumnos (sesión anónima): leen lo publicado y escriben SOLO su avance y sus eventos.
+//  · Nadie lista cursos ni códigos: se entra sabiendo el código.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+    function myEmail() {
+      return request.auth.token.email;
+    }
+    function isGoogle() {
+      return signedIn()
+        && request.auth.token.email is string
+        && request.auth.token.email_verified == true;
+    }
+    function isStaff(cid) {
+      return isGoogle()
+        && exists(/databases/$(database)/documents/courses/$(cid)/staff/$(myEmail()));
+    }
+    function isParticipant(cid) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/courses/$(cid)/participants/$(request.auth.uid));
+    }
+    function validCourse(d) {
+      return d.name is string && d.name.size() > 0 && d.name.size() <= 80
+        && d.code is string && d.code.size() == 6
+        && d.lessonsCount is int && d.lessonsCount >= 1 && d.lessonsCount <= 60
+        && (d.classWeekday == null || (d.classWeekday is int && d.classWeekday >= 0 && d.classWeekday <= 6));
+    }
+    function participantKeys() {
+      return ['uid', 'alias', 'joinedAt', 'joinedDate', 'srs', 'lastLessonDate', 'practiceDates', 'lastActiveAt'];
+    }
+    function validAlias(d) {
+      return d.alias is string && d.alias.size() >= 2 && d.alias.size() <= 30;
+    }
+
+    match /codes/{code} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if isGoogle()
+        && request.resource.data.keys().hasOnly(['courseId', 'name'])
+        && getAfter(/databases/$(database)/documents/courses/$(request.resource.data.courseId)).data.ownerUid == request.auth.uid
+        && getAfter(/databases/$(database)/documents/courses/$(request.resource.data.courseId)).data.code == code;
+      allow update: if isStaff(resource.data.courseId)
+        && request.resource.data.keys().hasOnly(['courseId', 'name'])
+        && request.resource.data.courseId == resource.data.courseId;
+      allow delete: if false;
+    }
+
+    match /courses/{cid} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if isGoogle()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.publishedVersion == 0
+        && validCourse(request.resource.data);
+      allow update: if isStaff(cid)
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && request.resource.data.code == resource.data.code
+        && validCourse(request.resource.data);
+      allow delete: if false;
+
+      match /staff/{staffEmail} {
+        allow read: if isStaff(cid);
+        allow create: if request.resource.data.email == staffEmail
+          && request.resource.data.keys().hasOnly(['email', 'role', 'addedAt'])
+          && (
+            (isGoogle() && staffEmail == myEmail() && request.resource.data.role == 'owner'
+              && getAfter(/databases/$(database)/documents/courses/$(cid)).data.ownerUid == request.auth.uid)
+            || (isStaff(cid) && request.resource.data.role == 'staff')
+          );
+        allow update: if false;
+        allow delete: if isStaff(cid) && resource.data.role != 'owner';
+      }
+
+      match /items/{itemId} {
+        allow read, write: if isStaff(cid);
+      }
+      match /media/{mediaId} {
+        allow read, write: if isStaff(cid);
+      }
+      match /signers/{signerId} {
+        allow read, write: if isStaff(cid);
+      }
+
+      match /packs/{version} {
+        allow read: if isStaff(cid) || isParticipant(cid);
+        allow create, update: if isStaff(cid);
+        allow delete: if false;
+      }
+
+      match /participants/{uid} {
+        allow get: if (signedIn() && request.auth.uid == uid) || isStaff(cid);
+        allow list: if isStaff(cid);
+        allow create: if signedIn() && request.auth.uid == uid
+          && request.resource.data.uid == uid
+          && request.resource.data.keys().hasOnly(participantKeys())
+          && validAlias(request.resource.data);
+        allow update: if signedIn() && request.auth.uid == uid
+          && request.resource.data.uid == resource.data.uid
+          && request.resource.data.joinedDate == resource.data.joinedDate
+          && request.resource.data.joinedAt == resource.data.joinedAt
+          && request.resource.data.keys().hasOnly(participantKeys())
+          && validAlias(request.resource.data);
+        allow delete: if false;
+      }
+
+      match /events/{chunkId} {
+        allow create: if isParticipant(cid)
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.keys().hasOnly(['uid', 'at', 'events'])
+          && request.resource.data.at == request.time
+          && request.resource.data.events is list
+          && request.resource.data.events.size() <= 200;
+        allow read: if isStaff(cid);
+        allow update, delete: if false;
+      }
+    }
+
+    // "Mis cursos": cada docente encuentra los cursos donde figura su correo.
+    match /{path=**}/staff/{staffEmail} {
+      allow read: if isGoogle() && resource.data.email == myEmail();
+    }
+  }
+}

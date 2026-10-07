@@ -1,0 +1,22 @@
+rules_version = '2';
+
+// Videos de señas: solo el equipo docente del curso sube o borra; cualquier persona con sesión los ve.
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isStaff(cid) {
+      return request.auth != null
+        && request.auth.token.email is string
+        && request.auth.token.email_verified == true
+        && firestore.exists(/databases/(default)/documents/courses/$(cid)/staff/$(request.auth.token.email));
+    }
+
+    match /courses/{cid}/media/{file} {
+      allow read: if request.auth != null;
+      allow create: if isStaff(cid)
+        && request.resource.size < 20 * 1024 * 1024
+        && request.resource.contentType.matches('video/.*');
+      allow delete: if isStaff(cid);
+      allow update: if false;
+    }
+  }
+}
